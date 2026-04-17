@@ -18,17 +18,15 @@ extern "C" void app_main(void)
 
     modem.begin(CONFIG_PHONE_NUMBER_FOR_RESPONSE, "LilyGo A7670 Device Started from esp-idf v6");
 
-    std::string url = CONFIG_SENSOR_SEND_WEB_SERVER_HTTPS_IMAGE_UPLOAD_URL;
-    std::string json = "{\"temperature\":25.3,\"humidity\":60}";
-    std::string apiKey = CONFIG_SENSOR_SEND_WEB_SERVER_HTTPS_IMAGE_UPLOAD_API_KEY;
-    if (modem.httpsPOST(url, json, apiKey)) {
+    if (modem.httpsPOST(CONFIG_SENSOR_SEND_WEB_SERVER_HTTPS_IMAGE_UPLOAD_URL,
+        "{\"esp32-a7670\":1}",
+        CONFIG_SENSOR_SEND_WEB_SERVER_HTTPS_IMAGE_UPLOAD_API_KEY)) {
         ESP_LOGI("MAIN", "POST succeeded");
     } else {
         ESP_LOGE("MAIN", "POST failed");
     }
 
-    url = CONFIG_SENSOR_SEND_OTA_URL;
-    if (modem.httpsGET(url)) {
+    if (modem.httpsGET(CONFIG_SENSOR_SEND_OTA_URL)) {
         ESP_LOGI("MAIN", "GET succeeded");
     } else {
         ESP_LOGE("MAIN", "GET failed");
