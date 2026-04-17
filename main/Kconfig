@@ -1,4 +1,4 @@
-menu "RemoteStation Configuration"
+menu "A7670 Configuration"
 
 config SENSOR_SEND_WEB_SERVER_HTTPS_IMAGE_UPLOAD_URL
     string "The full HTTPS POST url on the web server hosting the image upload"
