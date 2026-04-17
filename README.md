@@ -17,6 +17,7 @@ The project currently works with:
 ## Resources
 The SMS/HTTPS functionality was ported from the LilyGo Arduino examples:
 * [SendSMS.ino](https://github.com/Xinyuan-LilyGO/LilyGo-Modem-Series/blob/main/examples/SendSMS)
+* [GPS_BuiltIn](https://github.com/Xinyuan-LilyGO/LilyGo-Modem-Series/tree/main/examples/GPS_BuiltIn)
 * [HttpsBuiltlnGet](https://github.com/Xinyuan-LilyGO/LilyGo-Modem-Series/tree/main/examples/HttpsBuiltlnGet)
 * [HttpsBuiltlnPost](https://github.com/Xinyuan-LilyGO/LilyGo-Modem-Series/tree/main/examples/HttpsBuiltlnPost)
 
