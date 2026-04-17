@@ -427,11 +427,13 @@ void A7670Modem::powerOnModem() {
     std::string imei = getIMEI();
     ESP_LOGI(TAG, "IMEI: %s", imei.c_str());
 
-    std::string networkOperator = getOperator();
-    ESP_LOGI(TAG, "Operator: %s", networkOperator.c_str());
-
-    int signalQuality = getSignalQuality();
-    ESP_LOGI(TAG, "Signal quality (0-31): %d", signalQuality);
+    int signalQuality = 99;
+    while (signalQuality == 99)
+    {
+        signalQuality = getSignalQuality();
+        ESP_LOGI(TAG, "Signal quality (0-31): %d", signalQuality);
+        vTaskDelay(pdMS_TO_TICKS(5000)); 
+    }
 
     // Wait for the network
     ESP_LOGI(TAG, "Waiting for network...");
@@ -445,19 +447,39 @@ void A7670Modem::powerOnModem() {
       ESP_LOGI(TAG, "Network connected");
     }
 
+    std::string networkOperator = getOperator();
+    ESP_LOGI(TAG, "Operator: %s", networkOperator.c_str());
+
     // Connect to GPRS
     ESP_LOGI(TAG, "Connecting to GPRS...");
     std::string apn = CONFIG_LTE_NETWORK_APN;
     std::string user = CONFIG_LTE_NETWORK_USER;
     std::string pass = CONFIG_LTE_NETWORK_PASSWORD;
-    if (!gprsConnect(apn, user, pass, 10000)) {
-      ESP_LOGI(TAG, "GPRS connection failed");
+    if (gprsConnect(apn, user, pass, 10000)) {
+        ESP_LOGI(TAG, "GPRS connected!");
+        ESP_LOGI(TAG, "Local IP: ");
+        ESP_LOGI(TAG, "%s", getLocalIP().c_str());
+        ESP_LOGI(TAG, "waiting for services...");
+        vTaskDelay(pdMS_TO_TICKS(10000));
     }
     else {
-      ESP_LOGI(TAG, "GPRS connected!");
-      ESP_LOGI(TAG, "Local IP: ");
-      ESP_LOGI(TAG, "%s", getLocalIP().c_str());
+        ESP_LOGI(TAG, "GPRS connection failed");
+        return;
     }
+
+    writeCommand("AT+CREG?");
+    std::string creg = readResponse(READ_RESPONSE_TIMEOUT);
+    ESP_LOGI(TAG, "=========================================================");
+    ESP_LOGI(TAG, "AT+CREG?");
+    ESP_LOGI(TAG, "%s", creg.c_str());
+    ESP_LOGI(TAG, "=========================================================");
+
+    writeCommand("AT+CGREG?");
+    std::string cgreg = readResponse(READ_RESPONSE_TIMEOUT);
+    ESP_LOGI(TAG, "=========================================================");
+    ESP_LOGI(TAG, "AT+CGREG?");
+    ESP_LOGI(TAG, "%s", cgreg.c_str());
+    ESP_LOGI(TAG, "=========================================================");
 
     // Turn off echo
     writeCommand("ATE0"); readResponse(READ_RESPONSE_TIMEOUT);
