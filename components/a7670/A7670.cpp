@@ -461,6 +461,7 @@ void power_on_gps() {
     // ...request location...
     while (1) {
         // +CGNSSINFO: ,,,,,,,,
+        // SIM767XX Series_AT Command Manual_V1.01 manual p341
         // [<mode>],
         // [<GPS-SVs>],
         // [<GLONASS-SVs>],
