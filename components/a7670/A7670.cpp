@@ -49,6 +49,91 @@ static const char* TAG = "A7670Modem";
 static uart_port_t uartNum;
 static TaskHandle_t smsTaskHandle;
 
+
+
+
+
+struct AtResponse
+{
+    std::string command;   // e.g. "+CGNSSINFO"
+    std::string text;      // e.g. ",,,,,,,,"
+    std::string status;    // "OK" or "ERROR"
+};
+
+
+AtResponse parseAtResponse(const std::string& response, const std::string& command)
+{
+    AtResponse result;
+    result.command = command;
+
+    // 1. Find the command line (e.g. "+CGNSSINFO:")
+    std::string needle = command + ":";
+
+    auto start = response.find(needle);
+    if (start != std::string::npos)
+    {
+        auto colon = response.find(':', start);
+        if (colon != std::string::npos)
+        {
+            colon++; // after ':'
+
+            // skip spaces
+            while (colon < response.size() && response[colon] == ' ')
+                colon++;
+
+            auto end = response.find('\n', colon);
+            if (end == std::string::npos)
+                end = response.size();
+
+            result.text = response.substr(colon, end - colon);
+
+            // trim CR/LF
+            while (!result.text.empty() &&
+                  (result.text.back() == '\r' || result.text.back() == '\n'))
+            {
+                result.text.pop_back();
+            }
+        }
+    }
+
+    // 2. Extract final status
+    auto okPos = response.rfind("OK");
+    auto errPos = response.rfind("ERROR");
+
+    if (okPos != std::string::npos &&
+        (errPos == std::string::npos || okPos > errPos))
+    {
+        result.status = "OK";
+    }
+    else if (errPos != std::string::npos)
+    {
+        result.status = "ERROR";
+    }
+    else
+    {
+        result.status = "UNKNOWN";
+    }
+
+    return result;
+}
+
+
+
+
+void log_response(std::string cmd, std::string response) {
+    ESP_LOGI(TAG, "=======================================");
+    ESP_LOGI(TAG, "cmd:");
+    ESP_LOGI(TAG, "%s", cmd.c_str());
+    ESP_LOGI(TAG, "response:");
+    ESP_LOGI(TAG, "%s", response.c_str());
+    ESP_LOGI(TAG, "=======================================");
+}
+
+
+
+
+
+
 std::string extractSingleAtLine(const std::string &raw, const std::string &prefix)
 {
     std::istringstream stream(raw);
@@ -349,6 +434,68 @@ A7670Modem::~A7670Modem() {
   if (smsTaskHandle) vTaskDelete(smsTaskHandle);
 }
 
+
+
+
+void power_on_gps() {
+    // Power on...
+    writeCommand("AT+CGNSSPWR=1");
+    std::string response = readResponse(2000);
+    log_response("AT+CGNSSPWR=1", response);
+    AtResponse atResponse = parseAtResponse(response, "+CGNSSPWR");
+    ESP_LOGI(TAG, "command = %s", atResponse.command.c_str());
+    ESP_LOGI(TAG, "text = %s", atResponse.text.c_str());
+    ESP_LOGI(TAG, "status = %s", atResponse.status.c_str());
+    // delay for the system to start or the baud rate setting will fail
+    vTaskDelay(pdMS_TO_TICKS(5000));
+
+    // ...set the baud rate...
+    writeCommand("AT+CGNSSIPR=115200");
+    response = readResponse(2000);
+    log_response("AT+CGNSSIPR=115200", response); // ERROR
+    atResponse = parseAtResponse(response, "+CGNSSIPR");
+    ESP_LOGI(TAG, "command = %s", atResponse.command.c_str());
+    ESP_LOGI(TAG, "text = %s", atResponse.text.c_str());
+    ESP_LOGI(TAG, "status = %s", atResponse.status.c_str());
+
+    // ...request location...
+    while (1) {
+        // +CGNSSINFO: ,,,,,,,,
+        // [<mode>],
+        // [<GPS-SVs>],
+        // [<GLONASS-SVs>],
+        // [GALILEO-SVs],
+        // [BEIDOU-SVs],[<lat>],
+        // [<N/S>],
+        // [<log>],
+        // [<E/W>],
+        // [<date>],
+        // [<UTC-time>],
+        // [<alt>],
+        // [<speed>],
+        // [<course>],
+        // [<PDOP>],
+        // [HDOP],
+        // [VDOP],
+        // [NoSV]
+        writeCommand("AT+CGNSSINFO");
+        response = readResponse(2000);
+        log_response("AT+CGNSSINFO", response);
+        atResponse = parseAtResponse(response, "+CGNSSINFO");
+        ESP_LOGI(TAG, "command = %s", atResponse.command.c_str());
+        ESP_LOGI(TAG, "text = %s", atResponse.text.c_str());
+        ESP_LOGI(TAG, "status = %s", atResponse.status.c_str());
+        vTaskDelay(pdMS_TO_TICKS(5000));
+    }
+
+    // ...power off the gps
+    writeCommand("AT+CGNSSPWR=0");
+    response = readResponse(2000);
+    log_response("AT+CGNSSPWR=1", response);
+}
+
+
+
 void A7670Modem::begin(const std::string& startupNumber, const std::string& startupMessage) {
     pendingStartupNumber = startupNumber;
     pendingStartupMessage = startupMessage;
@@ -371,6 +518,8 @@ void A7670Modem::begin(const std::string& startupNumber, const std::string& star
     gpio_set_direction(BOARD_LED_PIN, GPIO_MODE_OUTPUT);
 
     powerOnModem();
+
+    power_on_gps();
 
     // Send startup SMS
     sendSMS(pendingStartupNumber, pendingStartupMessage);
