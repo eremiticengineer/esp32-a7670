@@ -1,0 +1,27 @@
+menu "A7670 Configuration"
+
+config LTE_NETWORK_APN
+    string "The network provider APN"
+    default ""
+    help
+      Enter the network provider APN
+
+config LTE_NETWORK_USER
+    string "The network provider USER"
+    default ""
+    help
+      Enter the network provider USER
+
+config LTE_NETWORK_PASSWORD
+    string "The network provider PASSWORD"
+    default ""
+    help
+      Enter the network provider PASSWORD
+
+config PHONE_NUMBER_FOR_RESPONSE
+    string "The phone number to send responses to"
+    default ""
+    help
+      Enter the phone number to send responses to
+
+endmenu

@@ -1,0 +1,72 @@
+# Build output
+/build/
+/CMakeCache.txt
+/CMakeFiles/
+/Makefile
+/cmake_install.cmake
+/compile_commands.json
+
+# ESP-IDF configuration files
+sdkconfig
+sdkconfig.old
+sdkconfig.ci
+
+dependencies.lock
+
+# ESP-IDF managed components
+managed_components/
+
+# Python cache
+__pycache__/
+/*.pyc
+/.mypy_cache/
+/*.pyo
+
+# IDF Tools / Python virtual environments
+/.espressif/
+/.venv/
+/venv/
+
+# Editor/IDE files
+*.swp
+*.swo
+*.tmp
+*.log
+*.user
+*.sublime-workspace
+*.sublime-project
+*.vscode/
+*.idea/
+*.DS_Store
+
+# Eclipse / Code::Blocks
+.project
+.cproject
+*.launch
+*.dep
+*.layout
+
+# PlatformIO
+.pio/
+.pioenvs/
+*.pio
+*.pioproj
+
+# Misc
+*.bin
+*.elf
+*.map
+*.hex
+*.bin.log
+*.bak
+*.orig
+*.rej
+
+# Cache / temp
+cmake_build/
+CMakeCache.txt
+CMakeFiles/
+Testing/
+Makefile
+cmake_install.cmake
+compile_commands.json

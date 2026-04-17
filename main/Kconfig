@@ -1,0 +1,21 @@
+menu "RemoteStation Configuration"
+
+config SENSOR_SEND_WEB_SERVER_HTTPS_IMAGE_UPLOAD_URL
+    string "The full HTTPS POST url on the web server hosting the image upload"
+    default "https://server.com/upload.php"
+    help
+      Enter the full HTTPS POST url on the web server hosting the image upload
+
+config SENSOR_SEND_WEB_SERVER_HTTPS_IMAGE_UPLOAD_API_KEY
+    string "The api key for the image upload"
+    default ""
+    help
+      Enter the api key for the image upload
+
+config SENSOR_SEND_OTA_URL
+    string "The url of the ota information file"
+    default "https://server.com/ota.json"
+    help
+      Enter the url of the ota information file
+
+endmenu
