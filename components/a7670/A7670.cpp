@@ -310,7 +310,15 @@ bool waitForNetwork(int timeout_ms) {
         size_t pos = resp.find("+CEREG:");
         if (pos != std::string::npos) {
             int stat = -1;
-            sscanf(resp.c_str() + pos, "+CEREG: %*d,%d", &stat);
+//            sscanf(resp.c_str() + pos, "+CEREG: %*d,%d", &stat);
+
+int matched = sscanf(
+    resp.c_str() + pos,
+    "+CEREG: %*d,%d",
+    &stat
+);
+ESP_LOGI("MODEM", "Response: [%s]", resp.c_str());
+ESP_LOGI("MODEM", "sscanf matched=%d, stat=%d", matched, stat);
 
             if (stat == 1 || stat == 5) { 
                 // 1 = registered home network
@@ -481,7 +489,7 @@ void power_on_gps() {
         // [NoSV]
         writeCommand("AT+CGNSSINFO");
         response = readResponse(2000);
-        log_response("AT+CGNSSINFO", response);
+        //log_response("AT+CGNSSINFO", response);
         atResponse = parseAtResponse(response, "+CGNSSINFO");
         ESP_LOGI(TAG, "command = %s", atResponse.command.c_str());
         ESP_LOGI(TAG, "text = %s", atResponse.text.c_str());
@@ -520,7 +528,7 @@ void A7670Modem::begin(const std::string& startupNumber, const std::string& star
 
     powerOnModem();
 
-    power_on_gps();
+    //power_on_gps();
 
     // Send startup SMS
     sendSMS(pendingStartupNumber, pendingStartupMessage);
@@ -587,9 +595,9 @@ void A7670Modem::powerOnModem() {
 
     // Wait for the network
     ESP_LOGI(TAG, "Waiting for network...");
-    if (!waitForNetwork(10000)) {
+    if (!waitForNetwork(1200000)) {
       ESP_LOGI(TAG, " fail");
-      vTaskDelay(pdMS_TO_TICKS(10000)); 
+      vTaskDelay(pdMS_TO_TICKS(5000)); 
       return;
     }
     ESP_LOGI(TAG, " success");
@@ -633,6 +641,128 @@ void A7670Modem::powerOnModem() {
 
     // Turn off echo
     writeCommand("ATE0"); readResponse(READ_RESPONSE_TIMEOUT);
+
+    writeCommand("AT+CPSI?");
+    std::string CPSI = readResponse(READ_RESPONSE_TIMEOUT);
+    ESP_LOGI(TAG, "*********************************************************");
+    ESP_LOGI(TAG, "AT+CPSI?");
+    ESP_LOGI(TAG, "%s", CPSI.c_str());
+    ESP_LOGI(TAG, "*********************************************************");
+
+    writeCommand("AT+CEREG?");
+    std::string CEREG = readResponse(READ_RESPONSE_TIMEOUT);
+    ESP_LOGI(TAG, "*********************************************************");
+    ESP_LOGI(TAG, "AT+CEREG?");
+    ESP_LOGI(TAG, "%s", cgreg.c_str());
+    ESP_LOGI(TAG, "*********************************************************");
+
+    writeCommand("AT+CIREG?");
+    std::string CIREG = readResponse(READ_RESPONSE_TIMEOUT);
+    ESP_LOGI(TAG, "*********************************************************");
+    ESP_LOGI(TAG, "AT+CIREG?");
+    ESP_LOGI(TAG, "%s", CIREG.c_str());
+    ESP_LOGI(TAG, "*********************************************************");
+
+    writeCommand("AT+CLIP=1");
+    std::string CLIP = readResponse(READ_RESPONSE_TIMEOUT);
+    ESP_LOGI(TAG, "*********************************************************");
+    ESP_LOGI(TAG, "AT+CLIP=1");
+    ESP_LOGI(TAG, "%s", CLIP.c_str());
+    ESP_LOGI(TAG, "*********************************************************");
+
+    writeCommand("AT+CRC=1");
+    std::string ATCRC = readResponse(READ_RESPONSE_TIMEOUT);
+    ESP_LOGI(TAG, "*********************************************************");
+    ESP_LOGI(TAG, "AT+CRC=1");
+    ESP_LOGI(TAG, "%s", ATCRC.c_str());
+    ESP_LOGI(TAG, "*********************************************************");
+
+
+
+    writeCommand("AT+CMEE=2");
+    std::string r = readResponse(READ_RESPONSE_TIMEOUT);
+    ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+    ESP_LOGI(TAG, "AT+CMEE=2");
+    ESP_LOGI(TAG, "%s", r.c_str());
+    ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+
+    writeCommand("AT+CIREG?");
+    r = readResponse(READ_RESPONSE_TIMEOUT);
+    ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+    ESP_LOGI(TAG, "AT+CIREG?");
+    ESP_LOGI(TAG, "%s", r.c_str());
+    ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+
+    writeCommand("AT+CPSI?");
+    r = readResponse(READ_RESPONSE_TIMEOUT);
+    ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+    ESP_LOGI(TAG, "AT+CPSI?");
+    ESP_LOGI(TAG, "%s", r.c_str());
+    ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+
+    char atd_command[32];
+    snprintf(atd_command, sizeof(atd_command), "ATD%s;", CONFIG_PHONE_NUMBER_FOR_RESPONSE);
+    writeCommand(atd_command);
+    r = readResponse(READ_RESPONSE_TIMEOUT);
+    ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+    ESP_LOGI(TAG, "ATD");
+    ESP_LOGI(TAG, "%s", r.c_str());
+    ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+
+    vTaskDelay(pdMS_TO_TICKS(3000));
+
+    writeCommand("AT+CEER");
+    r = readResponse(READ_RESPONSE_TIMEOUT);
+    ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+    ESP_LOGI(TAG, "AT+CEER");
+    ESP_LOGI(TAG, "%s", r.c_str());
+    ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+
+    writeCommand("AT+CLCC");
+    r = readResponse(READ_RESPONSE_TIMEOUT);
+    ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+    ESP_LOGI(TAG, "AT+CLCC");
+    ESP_LOGI(TAG, "%s", r.c_str());
+    ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+
+    writeCommand("AT+CPSI?");
+    r = readResponse(READ_RESPONSE_TIMEOUT);
+    ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+    ESP_LOGI(TAG, "AT+CPSI?");
+    ESP_LOGI(TAG, "%s", r.c_str());
+    ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+
+
+    writeCommand("AT+CLCC");
+    r = readResponse(READ_RESPONSE_TIMEOUT);
+    ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+    ESP_LOGI(TAG, "AT+CLCC");
+    ESP_LOGI(TAG, "%s", r.c_str());
+    ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+
+    writeCommand("AT+CPSI?");
+    r = readResponse(READ_RESPONSE_TIMEOUT);
+    ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+    ESP_LOGI(TAG, "AT+CPSI?");
+    ESP_LOGI(TAG, "%s", r.c_str());
+    ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+
+    vTaskDelay(pdMS_TO_TICKS(3000));
+
+    writeCommand("AT+CLCC");
+    r = readResponse(READ_RESPONSE_TIMEOUT);
+    ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+    ESP_LOGI(TAG, "AT+CLCC");
+    ESP_LOGI(TAG, "%s", r.c_str());
+    ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+
+    writeCommand("AT+CPSI?");
+    r = readResponse(READ_RESPONSE_TIMEOUT);
+    ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+    ESP_LOGI(TAG, "AT+CPSI?");
+    ESP_LOGI(TAG, "%s", r.c_str());
+    ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+    writeCommand("ATH");
 }
 
 bool A7670Modem::sendSMS(const std::string& number, const std::string& message) {
@@ -668,38 +798,194 @@ void A7670Modem::smsTaskWrapper(void* param) {
     modem->smsTask();
 }
 
+// void A7670Modem::smsTask() {
+//     char buf[512];
+//     std::string line;
+//     bool receivingMessage = false;
+//     std::string senderNumber;
+
+//     while (true) {
+//         int len = uart_read_bytes(uartNum, (uint8_t*)buf, sizeof(buf)-1, pdMS_TO_TICKS(500));
+//         if (len > 0) {
+//             buf[len] = 0;
+//             line += buf;
+
+//             size_t newlinePos;
+//             while ((newlinePos = line.find('\n')) != std::string::npos) {
+//                 std::string currentLine = trim(line.substr(0, newlinePos));
+//                 line.erase(0, newlinePos + 1);
+
+//                 if (currentLine.starts_with("+CMT: ")) {
+//                     // Extract sender
+//                     size_t firstQuote = currentLine.find("\"");
+//                     size_t secondQuote = currentLine.find("\"", firstQuote + 1);
+//                     senderNumber = currentLine.substr(firstQuote + 1, secondQuote - firstQuote - 1);
+//                     receivingMessage = true;
+//                 } else if (receivingMessage) {
+//                     std::string receivedMessage = trim(currentLine);
+//                     receivingMessage = false;
+//                     // Handle message
+//                     handleIncomingSMS(senderNumber, receivedMessage);
+//                 }
+//             }
+//         }
+//     }
+// }
+
 void A7670Modem::smsTask() {
     char buf[512];
     std::string line;
+
     bool receivingMessage = false;
     std::string senderNumber;
 
     while (true) {
-        int len = uart_read_bytes(uartNum, (uint8_t*)buf, sizeof(buf)-1, pdMS_TO_TICKS(500));
-        if (len > 0) {
-            buf[len] = 0;
-            line += buf;
 
-            size_t newlinePos;
-            while ((newlinePos = line.find('\n')) != std::string::npos) {
-                std::string currentLine = trim(line.substr(0, newlinePos));
-                line.erase(0, newlinePos + 1);
+        int len = uart_read_bytes(
+            uartNum,
+            reinterpret_cast<uint8_t*>(buf),
+            sizeof(buf) - 1,
+            pdMS_TO_TICKS(500)
+        );
 
-                if (currentLine.starts_with("+CMT: ")) {
-                    // Extract sender
-                    size_t firstQuote = currentLine.find("\"");
-                    size_t secondQuote = currentLine.find("\"", firstQuote + 1);
-                    senderNumber = currentLine.substr(firstQuote + 1, secondQuote - firstQuote - 1);
+        if (len <= 0) {
+            continue;
+        }
+
+        buf[len] = 0;
+        line += buf;
+
+        size_t newlinePos;
+
+        while ((newlinePos = line.find('\n')) != std::string::npos) {
+
+            std::string currentLine =
+                trim(line.substr(0, newlinePos));
+
+            line.erase(0, newlinePos + 1);
+
+            if (currentLine.empty()) {
+                continue;
+            }
+
+            ESP_LOGI(TAG, "URC: %s", currentLine.c_str());
+
+            // -------------------------------------------------
+            // Incoming SMS header
+            // -------------------------------------------------
+
+            if (currentLine.starts_with("+CMT: ")) {
+
+                size_t firstQuote =
+                    currentLine.find('"');
+
+                size_t secondQuote =
+                    currentLine.find('"', firstQuote + 1);
+
+                if (firstQuote != std::string::npos &&
+                    secondQuote != std::string::npos) {
+
+                    senderNumber =
+                        currentLine.substr(
+                            firstQuote + 1,
+                            secondQuote - firstQuote - 1
+                        );
+
                     receivingMessage = true;
-                } else if (receivingMessage) {
-                    std::string receivedMessage = trim(currentLine);
-                    receivingMessage = false;
-                    // Handle message
-                    handleIncomingSMS(senderNumber, receivedMessage);
                 }
+            }
+
+            // -------------------------------------------------
+            // Incoming SMS body
+            // -------------------------------------------------
+
+            else if (receivingMessage) {
+
+                std::string receivedMessage =
+                    trim(currentLine);
+
+                receivingMessage = false;
+
+                handleIncomingSMS(
+                    senderNumber,
+                    receivedMessage
+                );
+            }
+
+            // -------------------------------------------------
+            // Incoming call
+            // -------------------------------------------------
+
+            else if (currentLine == "RING" ||
+                     currentLine.starts_with("+CRING:")) {
+
+                ESP_LOGI(TAG, "Incoming call");
+
+                writeCommand("AT+CLCC");
+                std::string r = readResponse(READ_RESPONSE_TIMEOUT);
+                ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+                ESP_LOGI(TAG, "Incoming AT+CLCC");
+                ESP_LOGI(TAG, "%s", r.c_str());
+                ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+
+                handleIncomingCall();
+            }
+
+            // -------------------------------------------------
+            // Caller ID
+            // -------------------------------------------------
+
+            else if (currentLine.starts_with("+CLIP:")) {
+
+                ESP_LOGI(
+                    TAG,
+                    "Caller ID: %s",
+                    currentLine.c_str()
+                );
+            }
+
+            // -------------------------------------------------
+            // Call started
+            // -------------------------------------------------
+
+            else if (currentLine == "VOICE CALL: BEGIN") {
+                ESP_LOGI(TAG, "Voice call connected");
+
+                writeCommand("AT+CLCC");
+                std::string r = readResponse(READ_RESPONSE_TIMEOUT);
+                ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+                ESP_LOGI(TAG, "AT+CLCC");
+                ESP_LOGI(TAG, "%s", r.c_str());
+                ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+
+                vTaskDelay(pdMS_TO_TICKS(100));
+
+                writeCommand("AT+CPSI?");
+                r = readResponse(READ_RESPONSE_TIMEOUT);
+                ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+                ESP_LOGI(TAG, "AT+CPSI?");
+                ESP_LOGI(TAG, "%s", r.c_str());
+                ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+            }
+
+            // -------------------------------------------------
+            // Call ended
+            // -------------------------------------------------
+
+            else if (currentLine == "VOICE CALL: END" ||
+                     currentLine == "NO CARRIER") {
+
+                ESP_LOGI(TAG, "Voice call ended");
             }
         }
     }
+}
+
+void A7670Modem::handleIncomingCall() {
+
+    ESP_LOGI(TAG, "Answering incoming call");
+
+    writeCommand("ATA");
 }
 
 // In A7670.cpp

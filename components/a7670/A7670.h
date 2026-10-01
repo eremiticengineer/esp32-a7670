@@ -32,6 +32,7 @@ private:
 
     static void smsTask(void* param);
     void handleIncomingSMS(const std::string &from, const std::string &msg);
+    void handleIncomingCall();
 
     // Helpers to build the status message
     std::string getTime();
