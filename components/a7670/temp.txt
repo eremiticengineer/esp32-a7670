@@ -1,0 +1,594 @@
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "esp_log.h"
+#include "sdkconfig.h"
+
+#include "A7670.h"
+
+static const char* TAG = "A7670";
+
+extern "C" void app_main(void)
+{
+    A7670Modem modem;
+
+    for (int i = 0; i < 5; i++) {
+        ESP_LOGI(TAG, "Time elapsed: %d s", i + 1);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+
+    modem.begin_gps();
+
+    // modem.begin_modem(CONFIG_PHONE_NUMBER_FOR_RESPONSE, "LilyGo A7670 Device Started from esp-idf v6");
+
+    // if (modem.https_post(CONFIG_SENSOR_SEND_WEB_SERVER_HTTPS_IMAGE_UPLOAD_URL,
+    //     "{\"esp32-a7670\":1}",
+    //     CONFIG_SENSOR_SEND_WEB_SERVER_HTTPS_IMAGE_UPLOAD_API_KEY)) {
+    //     ESP_LOGI("MAIN", "POST succeeded");
+    // }
+    // else {
+    //     ESP_LOGE("MAIN", "POST failed");
+    // }
+
+    // if (modem.https_get(CONFIG_SENSOR_SEND_OTA_URL)) {
+    //     ESP_LOGI("MAIN", "GET succeeded");
+    // }
+    // else {
+    //     ESP_LOGE("MAIN", "GET failed");
+    // }
+
+    // modem.start_sms_listener();
+    
+    while(true) {
+      vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+
+void A7670Modem::begin_gps() {
+    power_on_gps();
+}
+
+void A7670Modem::power_on_gps() {
+    uart_config_t uart_config = {};
+    uart_config.baud_rate = 115200;
+    uart_config.data_bits = UART_DATA_8_BITS;
+    uart_config.parity    = UART_PARITY_DISABLE;
+    uart_config.stop_bits = UART_STOP_BITS_1;
+    uart_config.flow_ctrl = UART_HW_FLOWCTRL_DISABLE;
+    uart_config.rx_flow_ctrl_thresh = 0;
+    uart_config.rx_glitch_filt_thresh = 0;
+
+    uart_param_config(uart_number, &uart_config);
+    uart_set_pin(uart_number, MODEM_TX_PIN, MODEM_RX_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+    uart_driver_install(uart_number, 2048, 0, 0, nullptr, 0);
+
+    gpio_set_direction(MODEM_DTR_PIN, GPIO_MODE_OUTPUT);
+    gpio_set_direction(BOARD_PWRKEY_PIN, GPIO_MODE_OUTPUT);
+    gpio_set_direction(BOARD_LED_PIN, GPIO_MODE_OUTPUT);
+    // Set LED pin off
+    gpio_set_level(BOARD_LED_PIN, 0);
+
+    // Reset modem
+    gpio_set_level(MODEM_DTR_PIN, !MODEM_RESET_LEVEL);
+    vTaskDelay(pdMS_TO_TICKS(100));
+    gpio_set_level(MODEM_DTR_PIN, MODEM_RESET_LEVEL);
+    vTaskDelay(pdMS_TO_TICKS(2600));
+    gpio_set_level(MODEM_DTR_PIN, !MODEM_RESET_LEVEL);
+
+    // Pull down DTR to ensure the modem is not in sleep state
+    gpio_set_level(MODEM_DTR_PIN, 0);
+
+    // Turn on the modem
+    gpio_set_level(BOARD_PWRKEY_PIN, 0);
+    vTaskDelay(pdMS_TO_TICKS(100));
+    gpio_set_level(BOARD_PWRKEY_PIN, 1);
+    vTaskDelay(pdMS_TO_TICKS(MODEM_POWERON_PULSE_WIDTH_MS));
+    gpio_set_level(BOARD_PWRKEY_PIN, 0);
+
+    ESP_LOGI(TAG, "%s", PRODUCT_MODEL_NAME);
+
+    // Give modem ~3s to boot
+    vTaskDelay(pdMS_TO_TICKS(3000));
+
+    // Check whether it has been started
+    bool started = check_respond();
+    if (!started) {
+      ESP_LOGI(TAG, "modem failed to start");
+      return;
+    }
+    else {
+      ESP_LOGI(TAG, "modem started");
+    }
+
+    // Set LED pin on
+    gpio_set_level(BOARD_LED_PIN, 1);
+
+    std::string modem_name = get_modem_name();
+    ESP_LOGI(TAG, "Modem name: %s", modem_name.c_str());
+
+    std::string modem_info = get_modem_info();
+    ESP_LOGI(TAG, "Modem info: %s", modem_info.c_str());
+
+    // Power on...
+    write_command("AT+CGNSSPWR=1");
+    std::string response = read_response(2000);
+    log_response("AT+CGNSSPWR=1", response);
+
+    AtResponse at_response = parse_at_response(response, "+CGNSSPWR");
+    ESP_LOGI(TAG, "command = %s", at_response.command.c_str());
+    ESP_LOGI(TAG, "text = %s", at_response.text.c_str());
+    ESP_LOGI(TAG, "status = %s", at_response.status.c_str());
+    // delay for the system to start or the baud rate setting will fail
+    vTaskDelay(pdMS_TO_TICKS(5000));
+
+    // ...set the baud rate...
+    write_command("AT+CGNSSIPR=115200");
+    response = read_response(2000);
+    log_response("AT+CGNSSIPR=115200", response); // ERROR
+    at_response = parse_at_response(response, "+CGNSSIPR");
+    ESP_LOGI(TAG, "command = %s", at_response.command.c_str());
+    ESP_LOGI(TAG, "text = %s", at_response.text.c_str());
+    ESP_LOGI(TAG, "status = %s", at_response.status.c_str());
+
+    // Enable NMEA forwarding
+    write_command("AT+CGNSSTST=1");
+    log_response("AT+CGNSSTST=1", read_response(2000));
+    write_command("AT+CGNSSPORTSWITCH=?");
+    log_response("Supported ports", read_response(2000));
+    write_command("AT+CGNSSPORTSWITCH?");
+    log_response("Current ports", read_response(2000));
+    write_command("AT+CGNSSPORTSWITCH=0,1");
+    log_response("Set NMEA UART", read_response(2000));
+    write_command("AT+CGNSSTST=1");
+    log_response("Enable NMEA", read_response(2000));
+    
+    // ...request location...
+    while (1) {
+        // +CGNSSINFO: ,,,,,,,,
+        // SIM767XX Series_AT Command Manual_V1.01 manual p341
+        // [<mode>],
+        // [<GPS-SVs>],
+        // [<GLONASS-SVs>],
+        // [GALILEO-SVs],
+        // [BEIDOU-SVs],[<lat>],
+        // [<N/S>],
+        // [<log>],
+        // [<E/W>],
+        // [<date>],
+        // [<UTC-time>],
+        // [<alt>],
+        // [<speed>],
+        // [<course>],
+        // [<PDOP>],
+        // [HDOP],
+        // [VDOP],
+        // [NoSV]
+
+        ESP_LOGI(TAG, "-----------------------------------------------------");
+        // +CGNSSPWR: 1,0,1 = GNSS receiver enabled
+        // write_command("AT+CGNSSPWR?");
+        // log_response("AT+CGNSSPWR?", read_response(2000));
+
+        // write_command("AT+CGNSSTST?");
+        // log_response("AT+CGNSSTST?", read_response(2000));
+
+        // +CVAUXS: 1 = Auxiliary voltage output enabled
+        // write_command("AT+CVAUXS?");
+        // log_response("AT+CVAUXS?", read_response(2000));
+
+        // +CVAUXV: 3000 = Auxiliary voltage configured to 3000 mV (3.0 V)
+        // write_command("AT+CVAUXV?");
+        // log_response("AT+CVAUXV?", read_response(2000));
+        ESP_LOGI(TAG, "-----------------------------------------------------");
+
+        // Log satellite info
+        // $GPGSV,1,1,01,20,,,28,0*6C
+        // 01 — one GPS satellite visible
+        // 20 — satellite PRN 20
+        // 28 — signal strength of 28 dB-Hz
+        response = read_response(2000);
+        if (!response.empty()) {
+            std::istringstream stream(response);
+            std::string line;
+            while (std::getline(stream, line)) {
+                if (line.starts_with("$GPGSV")) {
+                    ESP_LOGI(TAG, "NMEA: %s", line.c_str());
+                }
+            }
+        }
+
+        write_command("AT+CGNSSINFO");
+        response = read_response(2000);
+        //log_response("AT+CGNSSINFO", response);
+        at_response = parse_at_response(response, "+CGNSSINFO");
+        ESP_LOGI(TAG, "command = %s", at_response.command.c_str());
+        ESP_LOGI(TAG, "text = %s", at_response.text.c_str());
+        ESP_LOGI(TAG, "status = %s", at_response.status.c_str());
+        vTaskDelay(pdMS_TO_TICKS(5000));
+    }
+
+    // ...power off the gps
+    write_command("AT+CGNSSPWR=0");
+    response = read_response(2000);
+    log_response("AT+CGNSSPWR=1", response);
+}
+
+void A7670Modem::begin_modem(const std::string& startup_number, const std::string& startup_message) {
+    pending_startup_number = startup_number;
+    pending_startup_message = startup_message;
+
+    uart_config_t uart_config;
+    uart_config.baud_rate = 115200;
+    uart_config.data_bits = UART_DATA_8_BITS;
+    uart_config.parity    = UART_PARITY_DISABLE;
+    uart_config.stop_bits = UART_STOP_BITS_1;
+    uart_config.flow_ctrl = UART_HW_FLOWCTRL_DISABLE;
+    uart_config.rx_flow_ctrl_thresh = 0;
+    uart_config.rx_glitch_filt_thresh = 0;
+
+    uart_param_config(uart_number, &uart_config);
+    uart_set_pin(uart_number, MODEM_TX_PIN, MODEM_RX_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+    uart_driver_install(uart_number, 2048, 0, 0, nullptr, 0);
+
+    gpio_set_direction(MODEM_DTR_PIN, GPIO_MODE_OUTPUT);
+    gpio_set_direction(BOARD_PWRKEY_PIN, GPIO_MODE_OUTPUT);
+    gpio_set_direction(BOARD_LED_PIN, GPIO_MODE_OUTPUT);
+
+    power_on_modem();
+
+    // Send startup SMS
+    send_sms(pending_startup_number, pending_startup_message);
+}
+
+void A7670Modem::power_on_modem() {
+    // Set LED pin off
+    gpio_set_level(BOARD_LED_PIN, 0);
+
+    // Reset modem
+    gpio_set_level(MODEM_DTR_PIN, !MODEM_RESET_LEVEL);
+    vTaskDelay(pdMS_TO_TICKS(100));
+    gpio_set_level(MODEM_DTR_PIN, MODEM_RESET_LEVEL);
+    vTaskDelay(pdMS_TO_TICKS(2600));
+    gpio_set_level(MODEM_DTR_PIN, !MODEM_RESET_LEVEL);
+
+    // Pull down DTR to ensure the modem is not in sleep state
+    gpio_set_level(MODEM_DTR_PIN, 0);
+
+    // Turn on the modem
+    gpio_set_level(BOARD_PWRKEY_PIN, 0);
+    vTaskDelay(pdMS_TO_TICKS(100));
+    gpio_set_level(BOARD_PWRKEY_PIN, 1);
+    vTaskDelay(pdMS_TO_TICKS(MODEM_POWERON_PULSE_WIDTH_MS));
+    gpio_set_level(BOARD_PWRKEY_PIN, 0);
+
+    ESP_LOGI(TAG, "%s", PRODUCT_MODEL_NAME);
+
+    // Give modem ~3s to boot
+    vTaskDelay(pdMS_TO_TICKS(3000));
+
+    // Check whether it has been started
+    bool started = check_respond();
+    if (!started) {
+      ESP_LOGI(TAG, "modem failed to start");
+      return;
+    }
+    else {
+      ESP_LOGI(TAG, "modem started");
+    }
+
+    // Set LED pin on
+    gpio_set_level(BOARD_LED_PIN, 1);
+
+    std::string modem_name = get_modem_name();
+    ESP_LOGI(TAG, "Modem name: %s", modem_name.c_str());
+
+    std::string modem_info = get_modem_info();
+    ESP_LOGI(TAG, "Modem info: %s", modem_info.c_str());
+
+    std::string sim_ccid = get_sim_ccid(10000);
+    ESP_LOGI(TAG, "SIM CCID: %s", sim_ccid.c_str());
+
+    std::string imei = get_imei();
+    ESP_LOGI(TAG, "IMEI: %s", imei.c_str());
+
+    int signal_quality = 99;
+    while (signal_quality == 99)
+    {
+        signal_quality = get_signal_quality();
+        ESP_LOGI(TAG, "Signal quality (0-31): %d", signal_quality);
+        vTaskDelay(pdMS_TO_TICKS(5000)); 
+    }
+
+    // Wait for the network
+    ESP_LOGI(TAG, "Waiting for network...");
+    if (!wait_for_network(1200000)) {
+      ESP_LOGI(TAG, " fail");
+      vTaskDelay(pdMS_TO_TICKS(5000)); 
+      return;
+    }
+    ESP_LOGI(TAG, " success");
+    if (is_network_connected()) {
+      ESP_LOGI(TAG, "Network connected");
+    }
+
+    std::string network_operator = get_operator();
+    ESP_LOGI(TAG, "Operator: %s", network_operator.c_str());
+
+    // Connect to GPRS
+    ESP_LOGI(TAG, "Connecting to GPRS...");
+    std::string apn = CONFIG_LTE_NETWORK_APN;
+    std::string username = CONFIG_LTE_NETWORK_USER;
+    std::string password = CONFIG_LTE_NETWORK_PASSWORD;
+    if (gprs_connect(apn, username, password, 10000)) {
+        ESP_LOGI(TAG, "GPRS connected!");
+        ESP_LOGI(TAG, "Local IP: ");
+        ESP_LOGI(TAG, "%s", get_Local_ip().c_str());
+        ESP_LOGI(TAG, "waiting for services...");
+        vTaskDelay(pdMS_TO_TICKS(10000));
+    }
+    else {
+        ESP_LOGI(TAG, "GPRS connection failed");
+        return;
+    }
+
+    write_command("AT+CREG?");
+    std::string response = read_response(READ_RESPONSE_TIMEOUT);
+    ESP_LOGI(TAG, "=========================================================");
+    ESP_LOGI(TAG, "AT+CREG?");
+    ESP_LOGI(TAG, "%s", response.c_str());
+    ESP_LOGI(TAG, "=========================================================");
+
+    write_command("AT+CGREG?");
+    response = read_response(READ_RESPONSE_TIMEOUT);
+    ESP_LOGI(TAG, "=========================================================");
+    ESP_LOGI(TAG, "AT+CGREG?");
+    ESP_LOGI(TAG, "%s", response.c_str());
+    ESP_LOGI(TAG, "=========================================================");
+
+    // Turn off echo
+    write_command("ATE0");
+    read_response(READ_RESPONSE_TIMEOUT);
+
+    write_command("AT+CPSI?");
+    response = read_response(READ_RESPONSE_TIMEOUT);
+    ESP_LOGI(TAG, "*********************************************************");
+    ESP_LOGI(TAG, "AT+CPSI?");
+    ESP_LOGI(TAG, "%s", response.c_str());
+    ESP_LOGI(TAG, "*********************************************************");
+
+    write_command("AT+CEREG?");
+    response = read_response(READ_RESPONSE_TIMEOUT);
+    ESP_LOGI(TAG, "*********************************************************");
+    ESP_LOGI(TAG, "AT+CEREG?");
+    ESP_LOGI(TAG, "%s", response.c_str());
+    ESP_LOGI(TAG, "*********************************************************");
+
+    write_command("AT+CIREG?");
+    response = read_response(READ_RESPONSE_TIMEOUT);
+    ESP_LOGI(TAG, "*********************************************************");
+    ESP_LOGI(TAG, "AT+CIREG?");
+    ESP_LOGI(TAG, "%s", response.c_str());
+    ESP_LOGI(TAG, "*********************************************************");
+
+    write_command("AT+CLIP=1");
+    response = read_response(READ_RESPONSE_TIMEOUT);
+    ESP_LOGI(TAG, "*********************************************************");
+    ESP_LOGI(TAG, "AT+CLIP=1");
+    ESP_LOGI(TAG, "%s", response.c_str());
+    ESP_LOGI(TAG, "*********************************************************");
+
+    write_command("AT+CRC=1");
+    response = read_response(READ_RESPONSE_TIMEOUT);
+    ESP_LOGI(TAG, "*********************************************************");
+    ESP_LOGI(TAG, "AT+CRC=1");
+    ESP_LOGI(TAG, "%s", response.c_str());
+    ESP_LOGI(TAG, "*********************************************************");
+
+
+
+    // Enable verbose error reporting
+    write_command("AT+CMEE=2");
+    response = read_response(READ_RESPONSE_TIMEOUT);
+    ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+    ESP_LOGI(TAG, "AT+CMEE=2");
+    ESP_LOGI(TAG, "%s", response.c_str());
+    ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+
+    write_command("AT+CIREG?");
+    response = read_response(READ_RESPONSE_TIMEOUT);
+    ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+    ESP_LOGI(TAG, "AT+CIREG?");
+    ESP_LOGI(TAG, "%s", response.c_str());
+    ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+
+    write_command("AT+CPSI?");
+    response = read_response(READ_RESPONSE_TIMEOUT);
+    ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+    ESP_LOGI(TAG, "AT+CPSI?");
+    ESP_LOGI(TAG, "%s", response.c_str());
+    ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+
+    char atd_command[32];
+    snprintf(atd_command, sizeof(atd_command), "ATD%s;", CONFIG_PHONE_NUMBER_FOR_RESPONSE);
+    write_command(atd_command);
+    response = read_response(READ_RESPONSE_TIMEOUT);
+    ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+    ESP_LOGI(TAG, "%s", atd_command);
+    ESP_LOGI(TAG, "%s", response.c_str());
+    ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+
+    vTaskDelay(pdMS_TO_TICKS(3000));
+
+    write_command("AT+CEER");
+    response = read_response(READ_RESPONSE_TIMEOUT);
+    ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+    ESP_LOGI(TAG, "AT+CEER");
+    ESP_LOGI(TAG, "%s", response.c_str());
+    ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+
+    write_command("AT+CLCC");
+    response = read_response(READ_RESPONSE_TIMEOUT);
+    ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+    ESP_LOGI(TAG, "AT+CLCC");
+    ESP_LOGI(TAG, "%s", response.c_str());
+    ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+
+    write_command("AT+CPSI?");
+    response = read_response(READ_RESPONSE_TIMEOUT);
+    ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+    ESP_LOGI(TAG, "AT+CPSI?");
+    ESP_LOGI(TAG, "%s", response.c_str());
+    ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+
+    write_command("AT+CLCC");
+    response = read_response(READ_RESPONSE_TIMEOUT);
+    ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+    ESP_LOGI(TAG, "AT+CLCC");
+    ESP_LOGI(TAG, "%s", response.c_str());
+    ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+
+    write_command("AT+CPSI?");
+    response = read_response(READ_RESPONSE_TIMEOUT);
+    ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+    ESP_LOGI(TAG, "AT+CPSI?");
+    ESP_LOGI(TAG, "%s", response.c_str());
+    ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+
+    vTaskDelay(pdMS_TO_TICKS(3000));
+
+    write_command("AT+CLCC");
+    response = read_response(READ_RESPONSE_TIMEOUT);
+    ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+    ESP_LOGI(TAG, "AT+CLCC");
+    ESP_LOGI(TAG, "%s", response.c_str());
+    ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+
+    write_command("AT+CPSI?");
+    response = read_response(READ_RESPONSE_TIMEOUT);
+    ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+    ESP_LOGI(TAG, "AT+CPSI?");
+    ESP_LOGI(TAG, "%s", response.c_str());
+    ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+    write_command("ATH");
+}
+
+void A7670Modem::start_sms_listener() {
+    if (!sms_task_handle) {
+        xTaskCreate(sms_task_wrapper, "sms_task", 4096, this, 5, &sms_task_handle);
+    }
+}
+
+
+// FreeRTOS tasks need static functions, so we wrap the member function
+void A7670Modem::sms_task_wrapper(void* param) {
+    A7670Modem* modem = static_cast<A7670Modem*>(param);
+    modem->sms_task();
+}
+
+
+void A7670Modem::sms_task() {
+    char buffer[512];
+    std::string line;
+
+    bool receiving_message = false;
+    std::string sender_number;
+
+    while (true) {
+        int length = uart_read_bytes(uart_number, reinterpret_cast<uint8_t*>(buffer), sizeof(buffer) - 1, pdMS_TO_TICKS(500));
+
+        if (length <= 0) {
+            continue;
+        }
+
+        buffer[length] = 0;
+        line += buffer;
+
+        size_t newline_position;
+
+        while ((newline_position = line.find('\n')) != std::string::npos) {
+            std::string current_line = trim(line.substr(0, newline_position));
+
+            line.erase(0, newline_position + 1);
+
+            if (current_line.empty()) {
+                continue;
+            }
+
+            ESP_LOGI(TAG, "URC: %s", current_line.c_str());
+
+            // -------------------------------------------------
+            // Incoming SMS header
+            // -------------------------------------------------
+            if (current_line.starts_with("+CMT: ")) {
+                size_t first_quote = current_line.find('"');
+                size_t second_quote = current_line.find('"', first_quote + 1);
+
+                if (first_quote != std::string::npos && second_quote != std::string::npos) {
+                    sender_number = current_line.substr(first_quote + 1, second_quote - first_quote - 1);
+                    receiving_message = true;
+                }
+            }
+
+            // -------------------------------------------------
+            // Incoming SMS body
+            // -------------------------------------------------
+            else if (receiving_message) {
+                std::string receivedMessage = trim(current_line);
+                receiving_message = false;
+                handle_incoming_sms(sender_number, receivedMessage);
+            }
+
+            // -------------------------------------------------
+            // Incoming call
+            // -------------------------------------------------
+            else if (current_line == "RING" || current_line.starts_with("+CRING:")) {
+                ESP_LOGI(TAG, "Incoming call");
+
+                write_command("AT+CLCC");
+                std::string response = read_response(READ_RESPONSE_TIMEOUT);
+                ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+                ESP_LOGI(TAG, "Incoming AT+CLCC");
+                ESP_LOGI(TAG, "%s", response.c_str());
+                ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+
+                handle_incoming_call();
+            }
+
+            // -------------------------------------------------
+            // Caller ID
+            // -------------------------------------------------
+            else if (current_line.starts_with("+CLIP:")) {
+                ESP_LOGI(TAG, "Caller ID: %s", current_line.c_str());
+            }
+
+            // -------------------------------------------------
+            // Call started
+            // -------------------------------------------------
+            else if (current_line == "VOICE CALL: BEGIN") {
+                ESP_LOGI(TAG, "Voice call connected");
+
+                write_command("AT+CLCC");
+                std::string response = read_response(READ_RESPONSE_TIMEOUT);
+                ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+                ESP_LOGI(TAG, "AT+CLCC");
+                ESP_LOGI(TAG, "%s", response.c_str());
+                ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+
+                vTaskDelay(pdMS_TO_TICKS(100));
+
+                write_command("AT+CPSI?");
+                response = read_response(READ_RESPONSE_TIMEOUT);
+                ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+                ESP_LOGI(TAG, "AT+CPSI?");
+                ESP_LOGI(TAG, "%s", response.c_str());
+                ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+            }
+
+            // -------------------------------------------------
+            // Call ended
+            // -------------------------------------------------
+            else if (current_line == "VOICE CALL: END" || current_line == "NO CARRIER") {
+                ESP_LOGI(TAG, "Voice call ended");
+            }
+        }
+    }
+}

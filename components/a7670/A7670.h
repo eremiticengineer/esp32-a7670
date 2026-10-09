@@ -1,22 +1,45 @@
 #pragma once
 
+#include <optional>
 #include <string>
+
 
 class A7670Modem {
 public:
+    struct GpsFix
+    {
+        double latitude;
+        double longitude;
+        double altitude;
+        double hdop;
+        int satellites;
+    };
+
     A7670Modem();
     ~A7670Modem();
 
-    // Initialize modem, power on, and send startup SMS
-    void begin_modem(const std::string& startupNumber, const std::string& startupMessage);
+    bool init_hardware();
 
-    // Initialise the GPD
-    void begin_gps();
+    bool power_on_modem();
+
+    bool power_on_gps();
+
+    bool power_off_gps();
+
+    bool power_off_modem();
+
+    bool connect_network(uint32_t timeout_ms);
+
+    static std::string format_location_sms(const GpsFix& fix);
+
+    void deinit_hardware();
+
+    std::optional<GpsFix> get_gps_fix(uint32_t timeout_ms);
 
     // Start background task to monitor incoming SMS
-    void start_sms_listener();
-    static void sms_task_wrapper(void* param);
-    void sms_task();
+    void start_network_event_listener();
+    static void network_event_task_wrapper(void* param);
+    void network_event_task();
 
     // Send SMS to a number
     bool send_sms(const std::string& number, const std::string& message);
@@ -30,8 +53,9 @@ private:
     std::string pending_startup_number;
     std::string pending_startup_message;
 
-    void power_on_modem();
-    void power_on_gps();
+    bool power_on_hardware();
+    bool connect_to_network();
+    bool connect_to_data_service();
 
     void handle_incoming_sms(const std::string &from, const std::string &msg);
     void handle_incoming_call();
@@ -45,6 +69,5 @@ private:
     int get_signal_quality();
     std::string get_operator();
 
-    // Helper: trim CR/LF
-    static std::string trim(const std::string& s);
+    std::optional<GpsFix> parse_gnss_fix(const std::string& response);
 };
