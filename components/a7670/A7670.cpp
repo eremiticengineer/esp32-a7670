@@ -46,12 +46,10 @@
 
 static const char* TAG = "A7670Modem";
 
-static uart_port_t uartNum;
-static TaskHandle_t smsTaskHandle;
+static uart_port_t uart_number;
+static TaskHandle_t sms_task_handle;
 
-
-
-
+namespace {
 
 struct AtResponse
 {
@@ -60,9 +58,16 @@ struct AtResponse
     std::string status;    // "OK" or "ERROR"
 };
 
+void log_response(std::string command, std::string response) {
+    ESP_LOGI(TAG, "=======================================");
+    ESP_LOGI(TAG, "command:");
+    ESP_LOGI(TAG, "%s", command.c_str());
+    ESP_LOGI(TAG, "response:");
+    ESP_LOGI(TAG, "%s", response.c_str());
+    ESP_LOGI(TAG, "=======================================");
+}
 
-AtResponse parseAtResponse(const std::string& response, const std::string& command)
-{
+AtResponse parse_at_response(const std::string& response, const std::string& command) {
     AtResponse result;
     result.command = command;
 
@@ -78,18 +83,19 @@ AtResponse parseAtResponse(const std::string& response, const std::string& comma
             colon++; // after ':'
 
             // skip spaces
-            while (colon < response.size() && response[colon] == ' ')
+            while (colon < response.size() && response[colon] == ' ') {
                 colon++;
+            }
 
             auto end = response.find('\n', colon);
-            if (end == std::string::npos)
+            if (end == std::string::npos) {
                 end = response.size();
+            }
 
             result.text = response.substr(colon, end - colon);
 
             // trim CR/LF
-            while (!result.text.empty() &&
-                  (result.text.back() == '\r' || result.text.back() == '\n'))
+            while (!result.text.empty() && (result.text.back() == '\r' || result.text.back() == '\n'))
             {
                 result.text.pop_back();
             }
@@ -97,15 +103,14 @@ AtResponse parseAtResponse(const std::string& response, const std::string& comma
     }
 
     // 2. Extract final status
-    auto okPos = response.rfind("OK");
-    auto errPos = response.rfind("ERROR");
+    auto ok_position = response.rfind("OK");
+    auto err_position = response.rfind("ERROR");
 
-    if (okPos != std::string::npos &&
-        (errPos == std::string::npos || okPos > errPos))
+    if (ok_position != std::string::npos && (err_position == std::string::npos || ok_position > err_position))
     {
         result.status = "OK";
     }
-    else if (errPos != std::string::npos)
+    else if (err_position != std::string::npos)
     {
         result.status = "ERROR";
     }
@@ -117,37 +122,22 @@ AtResponse parseAtResponse(const std::string& response, const std::string& comma
     return result;
 }
 
-
-
-
-void log_response(std::string cmd, std::string response) {
-    ESP_LOGI(TAG, "=======================================");
-    ESP_LOGI(TAG, "cmd:");
-    ESP_LOGI(TAG, "%s", cmd.c_str());
-    ESP_LOGI(TAG, "response:");
-    ESP_LOGI(TAG, "%s", response.c_str());
-    ESP_LOGI(TAG, "=======================================");
-}
-
-
-
-
-
-
-std::string extractSingleAtLine(const std::string &raw, const std::string &prefix)
+std::string extract_single_at_line(const std::string &raw, const std::string &prefix)
 {
     std::istringstream stream(raw);
     std::string line;
 
     while (std::getline(stream, line)) {
         // trim CR
-        if (!line.empty() && line.back() == '\r')
+        if (!line.empty() && line.back() == '\r') {
             line.pop_back();
+        }
 
         // trim leading spaces
         size_t first = line.find_first_not_of(" \t");
-        if (first != std::string::npos)
+        if (first != std::string::npos) {
             line = line.substr(first);
+        }
 
         if (line.rfind(prefix, 0) == 0) { // starts with prefix
             return line;
@@ -157,170 +147,172 @@ std::string extractSingleAtLine(const std::string &raw, const std::string &prefi
     return "";
 }
 
-std::string extractHttpSection(const std::string &raw, const std::string &sectionPrefix) {
+std::string extract_http_section(const std::string &raw, const std::string &section_prefix) {
     // Find section start
-    size_t start = raw.find(sectionPrefix);
-    if (start == std::string::npos) return "";
+    size_t start = raw.find(section_prefix);
+    if (start == std::string::npos) {
+        return "";
+    }
 
     // Skip the +HTTP... line
-    size_t lineEnd = raw.find('\n', start);
-    if (lineEnd == std::string::npos) return "";
-    start = lineEnd + 1;
+    size_t line_end = raw.find('\n', start);
+    if (line_end == std::string::npos) {
+        return "";
+    }
+    start = line_end + 1;
 
     // Take everything after that
     std::string section = raw.substr(start);
 
     // Split into lines
     std::vector<std::string> lines;
-    size_t pos = 0;
-    while (pos < section.size()) {
-        size_t next = section.find('\n', pos);
+    size_t position = 0;
+    while (position < section.size()) {
+        size_t next = section.find('\n', position);
         std::string line;
 
         if (next != std::string::npos) {
-            line = section.substr(pos, next - pos);
-            pos = next + 1;
-        } else {
-            line = section.substr(pos);
-            pos = section.size();
+            line = section.substr(position, next - position);
+            position = next + 1;
+        }
+        else {
+            line = section.substr(position);
+            position = section.size();
         }
 
         // trim whitespace
         line.erase(0, line.find_first_not_of("\r\n\t "));
         line.erase(line.find_last_not_of("\r\n\t ") + 1);
 
-        if (!line.empty())
+        if (!line.empty()) {
             lines.push_back(line);
+        }
     }
 
     // Remove last line (modem-specific: OK or +HTTPREAD: 0)
-    if (!lines.empty())
+    if (!lines.empty()) {
         lines.pop_back();
+    }
 
     // Rebuild result
     std::string result;
-    for (const auto &l : lines) {
-        if (!result.empty()) result += "\n";
-        result += l;
+    for (const auto& length : lines) {
+        if (!result.empty()) {
+            result += "\n";
+        }
+        result += length;
     }
 
     return result;
 }
 
-
-
-
-
-int parseLen(const std::string &resp) {
+int parse_length(const std::string &response) {
     // resp example: "+HTTPREAD: LEN,36"
-    size_t pos = resp.find(',');
-    if (pos != std::string::npos) {
-        return atoi(resp.substr(pos + 1).c_str());
+    size_t position = response.find(',');
+    if (position != std::string::npos) {
+        return atoi(response.substr(position + 1).c_str());
     }
     return 0; // fallback
 }
 
 // Reads a single line (terminated by \n) from the modem with a timeout
-std::string readLine(int timeout_ms) {
+std::string read_line(int timeout_ms) {
     std::string line;
     char c;
     int64_t start = esp_timer_get_time(); // microseconds
 
     while ((esp_timer_get_time() - start) < timeout_ms * 1000) {
-        int len = uart_read_bytes(uartNum, (uint8_t*)&c, 1, pdMS_TO_TICKS(50));
+        int len = uart_read_bytes(uart_number, (uint8_t*)&c, 1, pdMS_TO_TICKS(50));
         if (len > 0) {
             if (c == '\n') {
                 break; // end of line
-            } else if (c != '\r') {
+            }
+            else if (c != '\r') {
                 line += c;
             }
-        } else {
+        }
+        else {
             vTaskDelay(pdMS_TO_TICKS(10)); // small delay
         }
     }
+
     return line;
 }
 
-void writeCommand(const std::string& cmd) {
-    std::string c = cmd + "\r\n";
-    uart_write_bytes(uartNum, c.c_str(), c.length());
+void write_command(const std::string& command) {
+    std::string command_string = command + "\r\n";
+    uart_write_bytes(uart_number, command_string.c_str(), command_string.length());
 }
 
-std::string readResponse(int timeout_ms) {
-    std::string resp;
-    char buf[128];
+std::string read_response(int timeout_ms) {
+    std::string response;
+    char buffer[128];
 
     int64_t start = esp_timer_get_time() / 1000;
 
     while ((esp_timer_get_time() / 1000 - start) < timeout_ms) {
-        int len = uart_read_bytes(uartNum, (uint8_t*)buf, sizeof(buf)-1, pdMS_TO_TICKS(100));
+        int len = uart_read_bytes(uart_number, (uint8_t*)buffer, sizeof(buffer)-1, pdMS_TO_TICKS(100));
         if (len > 0) {
-            buf[len] = '\0';
-            resp += buf;
+            buffer[len] = '\0';
+            response += buffer;
 
-            if (resp.find("\r\nOK") != std::string::npos ||
-                resp.find("\r\nERROR") != std::string::npos) {
+            if (response.find("\r\nOK") != std::string::npos || response.find("\r\nERROR") != std::string::npos) {
                 break;
             }
         }
     }
-    return resp;
+
+    return response;
 }
 
-bool checkRespond() {
-    const int maxRetries = 10;
-    const int delayMs = 1000; // 1 second between retries
+bool check_respond() {
+    const int max_retries = 10;
+    const int delay_ms = 1000; // 1 second between retries
 
-    for (int j = 0; j < maxRetries; j++) {
-        writeCommand("AT"); // simple ping
-        std::string resp = readResponse(1000);
-        if (resp.find("OK") != std::string::npos) {
+    for (int j = 0; j < max_retries; j++) {
+        write_command("AT"); // simple ping
+        std::string response = read_response(1000);
+        if (response.find("OK") != std::string::npos) {
             ESP_LOGI(TAG, "Modem responded");
 
             // Safe configuration
-            writeCommand("ATE0");          // Disable echo
-            readResponse(500);
+            write_command("ATE0");          // Disable echo
+            read_response(500);
 
-            writeCommand("ATI");           // Get modem info
-            readResponse(500);
+            write_command("ATI");           // Get modem info
+            read_response(500);
 
-            writeCommand("AT+CMGF=1");     // SMS text mode
-            readResponse(500);
+            write_command("AT+CMGF=1");     // SMS text mode
+            read_response(500);
 
             return true;
         }
 
-        ESP_LOGW(TAG, "No response, retry %d/%d", j + 1, maxRetries);
-        vTaskDelay(pdMS_TO_TICKS(delayMs));
+        ESP_LOGW(TAG, "No response, retry %d/%d", j + 1, max_retries);
+        vTaskDelay(pdMS_TO_TICKS(delay_ms));
     }
 
-    ESP_LOGE(TAG, "Modem did not respond after %d retries", maxRetries);
+    ESP_LOGE(TAG, "Modem did not respond after %d retries", max_retries);
     return false;
 }
 
-bool waitForNetwork(int timeout_ms) {
+bool wait_for_network(int timeout_ms) {
     const int poll_interval_ms = 1000; // check every 1s
     int elapsed = 0;
 
     while (elapsed < timeout_ms) {
-        writeCommand("AT+CEREG?");
-        std::string resp = readResponse(500);
+        write_command("AT+CEREG?");
+        std::string response = read_response(500);
 
-        // look for +CEREG: <n>,<stat>
-        size_t pos = resp.find("+CEREG:");
-        if (pos != std::string::npos) {
-            int stat = -1;
-//            sscanf(resp.c_str() + pos, "+CEREG: %*d,%d", &stat);
+        // look for +CEREG: <n>,<modem_registration_status>
+        size_t position = response.find("+CEREG:");
+        if (position != std::string::npos) {
+            int modem_registration_status = -1;
+            int matched_fields = sscanf(response.c_str() + position, "+CEREG: %*d,%d", &modem_registration_status);
+            ESP_LOGI("MODEM", "Response: [%s]", response.c_str());
+            ESP_LOGI("MODEM", "sscanf matched_fields=%d, modem_registration_status=%d", matched_fields, modem_registration_status);
 
-int matched = sscanf(
-    resp.c_str() + pos,
-    "+CEREG: %*d,%d",
-    &stat
-);
-ESP_LOGI("MODEM", "Response: [%s]", resp.c_str());
-ESP_LOGI("MODEM", "sscanf matched=%d, stat=%d", matched, stat);
-
-            if (stat == 1 || stat == 5) { 
+            if (modem_registration_status == 1 || modem_registration_status == 5) { 
                 // 1 = registered home network
                 // 5 = registered roaming
                 ESP_LOGI("MODEM", "Network registered!");
@@ -336,18 +328,24 @@ ESP_LOGI("MODEM", "sscanf matched=%d, stat=%d", matched, stat);
     return false;
 }
 
-bool isNetworkConnected() {
-    writeCommand("AT+CEREG?");
-    std::string resp = readResponse(500);
+bool is_network_connected() {
+    write_command("AT+CEREG?"); // Read EPS network registration status
 
-    // look for +CEREG: <n>,<stat>
-    size_t pos = resp.find("+CEREG:");
-    if (pos != std::string::npos) {
-        int stat = -1;
-        sscanf(resp.c_str() + pos, "+CEREG: %*d,%d", &stat);
+    std::string response = read_response(500);
+
+    // look for +CEREG: <n>,<modem_registration_status>
+    size_t position_of_cereg_response = response.find("+CEREG:");
+    if (position_of_cereg_response != std::string::npos) {
+        int modem_registration_status = -1;
+        // AT+CEREG EPS network registration status, response:
+        //                                                    +CEREG:0,1 = 0=LTE notifications disabled
+        //                                                              read 0, discard
+        //                                                              | read 1, store
+        //                                                              |  |
+        sscanf(response.c_str() + position_of_cereg_response, "+CEREG: %*d,%d", &modem_registration_status);
 
         // 1 = registered home network, 5 = registered roaming
-        if (stat == 1 || stat == 5) {
+        if (modem_registration_status == 1 || modem_registration_status == 5) {
             return true;
         }
     }
@@ -355,116 +353,107 @@ bool isNetworkConnected() {
     return false;
 }
 
-bool gprsConnect(const std::string &apn,
-                 const std::string &user,
-                 const std::string &pass,
-                 int timeout_ms)
+bool gprs_connect(const std::string &apn, const std::string &username, const std::string &password, int timeout_ms)
 {
     ESP_LOGI(TAG, "Configuring GPRS...");
 
-    std::string resp;
-    std::string cmd;
+    std::string response;
+    std::string command;
 
-    // --- 1. Set authentication ---
-    if (!user.empty() || !pass.empty()) {
-        cmd = "AT+CGAUTH=1,0,\"" + user + "\",\"" + pass + "\"";
-        writeCommand(cmd.c_str());
-        resp = readResponse(2000);
-        if (resp.find("OK") == std::string::npos) {
+    // Authentication
+    if (!username.empty() || !password.empty()) {
+        command = "AT+CGAUTH=1,0,\"" + username + "\",\"" + password + "\"";
+        write_command(command.c_str());
+        response = read_response(2000);
+        if (response.find("OK") == std::string::npos) {
             ESP_LOGW(TAG, "Auth command returned error (likely empty password), ignoring...");
             // Continue anyway, like TinyGSM
-        } else {
+        }
+        else {
             ESP_LOGI(TAG, "Auth set successfully");
         }
-    } else {
+    }
+    else {
         // If both empty, still send command for compatibility
-        cmd = "AT+CGAUTH=1,0";
-        writeCommand(cmd.c_str());
-        resp = readResponse(2000);
+        command = "AT+CGAUTH=1,0";
+        write_command(command);
+        command = read_response(2000);
         ESP_LOGI(TAG, "Auth command sent with no credentials");
     }
 
-    // --- 2. Set PDP context ---
-    cmd = "AT+CGDCONT=1,\"IP\",\"" + apn + "\",\"0.0.0.0\",0,0";
-    writeCommand(cmd.c_str());
-    resp = readResponse(2000);
-    if (resp.find("OK") == std::string::npos) {
-        ESP_LOGE(TAG, "Failed to set PDP context: %s", resp.c_str());
+    // Set PDP context
+    command = "AT+CGDCONT=1,\"IP\",\"" + apn + "\",\"0.0.0.0\",0,0";
+    write_command(command.c_str());
+    response = read_response(2000);
+    if (response.find("OK") == std::string::npos) {
+        ESP_LOGE(TAG, "Failed to set PDP context: %s", response.c_str());
         return false;
     }
 
-    // --- 3. Activate context ---
-    writeCommand("AT+CGACT=1,1");
-    resp = readResponse(5000);
-    if (resp.find("OK") == std::string::npos) {
-        ESP_LOGE(TAG, "Failed to activate PDP context: %s", resp.c_str());
+    // Activate context
+    write_command("AT+CGACT=1,1");
+    response = read_response(5000);
+    if (response.find("OK") == std::string::npos) {
+        ESP_LOGE(TAG, "Failed to activate PDP context: %s", response.c_str());
         return false;
     }
 
-    // --- 4. Open network connection ---
-    writeCommand("AT+NETOPEN");
-    resp = readResponse(timeout_ms);
+    // Open network connection
+    write_command("AT+NETOPEN");
+    response = read_response(timeout_ms);
 
-    if (resp.find("OK") != std::string::npos ||
-      resp.find("+NETOPEN: 0") != std::string::npos ||
-      resp.find("Network is already opened") != std::string::npos) {
+    if (response.find("OK") != std::string::npos ||
+      response.find("+NETOPEN: 0") != std::string::npos ||
+      response.find("Network is already opened") != std::string::npos) {
       ESP_LOGI(TAG, "GPRS connected!");
       return true;
     }
 
-    ESP_LOGE(TAG, "Failed to connect GPRS: %s", resp.c_str());
+    ESP_LOGE(TAG, "Failed to connect GPRS: %s", response.c_str());
     return false;
 }
 
-std::string getLocalIP() {
-    writeCommand("AT+IPADDR");
-    std::string resp = readResponse(1000);
+std::string get_Local_ip() {
+    std::string ip = "0.0.0.0"; // default if not found
+
+    write_command("AT+IPADDR");
+    std::string response = read_response(1000);
 
     // The response usually contains: +IPADDR: x.x.x.x
-    size_t pos = resp.find("+IPADDR:");
-    if (pos != std::string::npos) {
+    size_t ipaddr_position = response.find("+IPADDR:");
+    if (ipaddr_position != std::string::npos) {
         // skip past "+IPADDR:" and any whitespace
-        std::string ip = resp.substr(pos + 8);
+        ip = response.substr(ipaddr_position + 8);
         // remove trailing newline/carriage return
         ip.erase(ip.find_last_not_of("\r\n ") + 1);
-        return ip;
     }
 
-    return "0.0.0.0"; // default if not found
+    return ip;
 }
-
-A7670Modem::A7670Modem() {
-  uartNum = static_cast<uart_port_t>(1);
-  smsTaskHandle = nullptr;
-}
-
-A7670Modem::~A7670Modem() {
-  if (smsTaskHandle) vTaskDelete(smsTaskHandle);
-}
-
-
-
 
 void power_on_gps() {
     // Power on...
-    writeCommand("AT+CGNSSPWR=1");
-    std::string response = readResponse(2000);
+    write_command("AT+CGNSSPWR=1");
+
+    std::string response = read_response(2000);
+
     log_response("AT+CGNSSPWR=1", response);
-    AtResponse atResponse = parseAtResponse(response, "+CGNSSPWR");
-    ESP_LOGI(TAG, "command = %s", atResponse.command.c_str());
-    ESP_LOGI(TAG, "text = %s", atResponse.text.c_str());
-    ESP_LOGI(TAG, "status = %s", atResponse.status.c_str());
+
+    AtResponse at_response = parse_at_response(response, "+CGNSSPWR");
+    ESP_LOGI(TAG, "command = %s", at_response.command.c_str());
+    ESP_LOGI(TAG, "text = %s", at_response.text.c_str());
+    ESP_LOGI(TAG, "status = %s", at_response.status.c_str());
     // delay for the system to start or the baud rate setting will fail
     vTaskDelay(pdMS_TO_TICKS(5000));
 
     // ...set the baud rate...
-    writeCommand("AT+CGNSSIPR=115200");
-    response = readResponse(2000);
+    write_command("AT+CGNSSIPR=115200");
+    response = read_response(2000);
     log_response("AT+CGNSSIPR=115200", response); // ERROR
-    atResponse = parseAtResponse(response, "+CGNSSIPR");
-    ESP_LOGI(TAG, "command = %s", atResponse.command.c_str());
-    ESP_LOGI(TAG, "text = %s", atResponse.text.c_str());
-    ESP_LOGI(TAG, "status = %s", atResponse.status.c_str());
+    at_response = parse_at_response(response, "+CGNSSIPR");
+    ESP_LOGI(TAG, "command = %s", at_response.command.c_str());
+    ESP_LOGI(TAG, "text = %s", at_response.text.c_str());
+    ESP_LOGI(TAG, "status = %s", at_response.status.c_str());
 
     // ...request location...
     while (1) {
@@ -487,27 +476,36 @@ void power_on_gps() {
         // [HDOP],
         // [VDOP],
         // [NoSV]
-        writeCommand("AT+CGNSSINFO");
-        response = readResponse(2000);
+        write_command("AT+CGNSSINFO");
+        response = read_response(2000);
         //log_response("AT+CGNSSINFO", response);
-        atResponse = parseAtResponse(response, "+CGNSSINFO");
-        ESP_LOGI(TAG, "command = %s", atResponse.command.c_str());
-        ESP_LOGI(TAG, "text = %s", atResponse.text.c_str());
-        ESP_LOGI(TAG, "status = %s", atResponse.status.c_str());
+        at_response = parse_at_response(response, "+CGNSSINFO");
+        ESP_LOGI(TAG, "command = %s", at_response.command.c_str());
+        ESP_LOGI(TAG, "text = %s", at_response.text.c_str());
+        ESP_LOGI(TAG, "status = %s", at_response.status.c_str());
         vTaskDelay(pdMS_TO_TICKS(5000));
     }
 
     // ...power off the gps
-    writeCommand("AT+CGNSSPWR=0");
-    response = readResponse(2000);
+    write_command("AT+CGNSSPWR=0");
+    response = read_response(2000);
     log_response("AT+CGNSSPWR=1", response);
 }
 
+} // namespace
 
+A7670Modem::A7670Modem() {
+  uart_number = static_cast<uart_port_t>(1);
+  sms_task_handle = nullptr;
+}
 
-void A7670Modem::begin(const std::string& startupNumber, const std::string& startupMessage) {
-    pendingStartupNumber = startupNumber;
-    pendingStartupMessage = startupMessage;
+A7670Modem::~A7670Modem() {
+  if (sms_task_handle) vTaskDelete(sms_task_handle);
+}
+
+void A7670Modem::begin(const std::string& startup_number, const std::string& startup_message) {
+    pending_startup_number = startup_number;
+    pending_startup_message = startup_message;
 
     uart_config_t uart_config;
     uart_config.baud_rate = 115200;
@@ -518,23 +516,23 @@ void A7670Modem::begin(const std::string& startupNumber, const std::string& star
     uart_config.rx_flow_ctrl_thresh = 0;
     uart_config.rx_glitch_filt_thresh = 0;
 
-    uart_param_config(uartNum, &uart_config);
-    uart_set_pin(uartNum, MODEM_TX_PIN, MODEM_RX_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
-    uart_driver_install(uartNum, 2048, 0, 0, nullptr, 0);
+    uart_param_config(uart_number, &uart_config);
+    uart_set_pin(uart_number, MODEM_TX_PIN, MODEM_RX_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+    uart_driver_install(uart_number, 2048, 0, 0, nullptr, 0);
 
     gpio_set_direction(MODEM_DTR_PIN, GPIO_MODE_OUTPUT);
     gpio_set_direction(BOARD_PWRKEY_PIN, GPIO_MODE_OUTPUT);
     gpio_set_direction(BOARD_LED_PIN, GPIO_MODE_OUTPUT);
 
-    powerOnModem();
+    power_on_modem();
 
     //power_on_gps();
 
     // Send startup SMS
-    sendSMS(pendingStartupNumber, pendingStartupMessage);
+    send_sms(pending_startup_number, pending_startup_message);
 }
 
-void A7670Modem::powerOnModem() {
+void A7670Modem::power_on_modem() {
     // Set LED pin off
     gpio_set_level(BOARD_LED_PIN, 0);
 
@@ -561,7 +559,7 @@ void A7670Modem::powerOnModem() {
     vTaskDelay(pdMS_TO_TICKS(3000));
 
     // Check whether it has been started
-    bool started = checkRespond();
+    bool started = check_respond();
     if (!started) {
       ESP_LOGI(TAG, "modem failed to start");
       return;
@@ -573,50 +571,50 @@ void A7670Modem::powerOnModem() {
     // Set LED pin on
     gpio_set_level(BOARD_LED_PIN, 1);
 
-    std::string modemName = getModemName();
-    ESP_LOGI(TAG, "Modem name: %s", modemName.c_str());
+    std::string modem_name = get_modem_name();
+    ESP_LOGI(TAG, "Modem name: %s", modem_name.c_str());
 
-    std::string modemInfo = getModemInfo();
-    ESP_LOGI(TAG, "Modem info: %s", modemInfo.c_str());
+    std::string modem_info = get_modem_info();
+    ESP_LOGI(TAG, "Modem info: %s", modem_info.c_str());
 
-    std::string simCCID = getSimCCID(10000);
-    ESP_LOGI(TAG, "SIM CCID: %s", simCCID.c_str());
+    std::string sim_ccid = get_sim_ccid(10000);
+    ESP_LOGI(TAG, "SIM CCID: %s", sim_ccid.c_str());
 
-    std::string imei = getIMEI();
+    std::string imei = get_imei();
     ESP_LOGI(TAG, "IMEI: %s", imei.c_str());
 
-    int signalQuality = 99;
-    while (signalQuality == 99)
+    int signal_quality = 99;
+    while (signal_quality == 99)
     {
-        signalQuality = getSignalQuality();
-        ESP_LOGI(TAG, "Signal quality (0-31): %d", signalQuality);
+        signal_quality = get_signal_quality();
+        ESP_LOGI(TAG, "Signal quality (0-31): %d", signal_quality);
         vTaskDelay(pdMS_TO_TICKS(5000)); 
     }
 
     // Wait for the network
     ESP_LOGI(TAG, "Waiting for network...");
-    if (!waitForNetwork(1200000)) {
+    if (!wait_for_network(1200000)) {
       ESP_LOGI(TAG, " fail");
       vTaskDelay(pdMS_TO_TICKS(5000)); 
       return;
     }
     ESP_LOGI(TAG, " success");
-    if (isNetworkConnected()) {
+    if (is_network_connected()) {
       ESP_LOGI(TAG, "Network connected");
     }
 
-    std::string networkOperator = getOperator();
-    ESP_LOGI(TAG, "Operator: %s", networkOperator.c_str());
+    std::string network_operator = get_operator();
+    ESP_LOGI(TAG, "Operator: %s", network_operator.c_str());
 
     // Connect to GPRS
     ESP_LOGI(TAG, "Connecting to GPRS...");
     std::string apn = CONFIG_LTE_NETWORK_APN;
-    std::string user = CONFIG_LTE_NETWORK_USER;
-    std::string pass = CONFIG_LTE_NETWORK_PASSWORD;
-    if (gprsConnect(apn, user, pass, 10000)) {
+    std::string username = CONFIG_LTE_NETWORK_USER;
+    std::string password = CONFIG_LTE_NETWORK_PASSWORD;
+    if (gprs_connect(apn, username, password, 10000)) {
         ESP_LOGI(TAG, "GPRS connected!");
         ESP_LOGI(TAG, "Local IP: ");
-        ESP_LOGI(TAG, "%s", getLocalIP().c_str());
+        ESP_LOGI(TAG, "%s", get_Local_ip().c_str());
         ESP_LOGI(TAG, "waiting for services...");
         vTaskDelay(pdMS_TO_TICKS(10000));
     }
@@ -625,721 +623,658 @@ void A7670Modem::powerOnModem() {
         return;
     }
 
-    writeCommand("AT+CREG?");
-    std::string creg = readResponse(READ_RESPONSE_TIMEOUT);
+    write_command("AT+CREG?");
+    std::string response = read_response(READ_RESPONSE_TIMEOUT);
     ESP_LOGI(TAG, "=========================================================");
     ESP_LOGI(TAG, "AT+CREG?");
-    ESP_LOGI(TAG, "%s", creg.c_str());
+    ESP_LOGI(TAG, "%s", response.c_str());
     ESP_LOGI(TAG, "=========================================================");
 
-    writeCommand("AT+CGREG?");
-    std::string cgreg = readResponse(READ_RESPONSE_TIMEOUT);
+    write_command("AT+CGREG?");
+    response = read_response(READ_RESPONSE_TIMEOUT);
     ESP_LOGI(TAG, "=========================================================");
     ESP_LOGI(TAG, "AT+CGREG?");
-    ESP_LOGI(TAG, "%s", cgreg.c_str());
+    ESP_LOGI(TAG, "%s", response.c_str());
     ESP_LOGI(TAG, "=========================================================");
 
     // Turn off echo
-    writeCommand("ATE0"); readResponse(READ_RESPONSE_TIMEOUT);
+    write_command("ATE0");
+    read_response(READ_RESPONSE_TIMEOUT);
 
-    writeCommand("AT+CPSI?");
-    std::string CPSI = readResponse(READ_RESPONSE_TIMEOUT);
+    write_command("AT+CPSI?");
+    response = read_response(READ_RESPONSE_TIMEOUT);
     ESP_LOGI(TAG, "*********************************************************");
     ESP_LOGI(TAG, "AT+CPSI?");
-    ESP_LOGI(TAG, "%s", CPSI.c_str());
+    ESP_LOGI(TAG, "%s", response.c_str());
     ESP_LOGI(TAG, "*********************************************************");
 
-    writeCommand("AT+CEREG?");
-    std::string CEREG = readResponse(READ_RESPONSE_TIMEOUT);
+    write_command("AT+CEREG?");
+    response = read_response(READ_RESPONSE_TIMEOUT);
     ESP_LOGI(TAG, "*********************************************************");
     ESP_LOGI(TAG, "AT+CEREG?");
-    ESP_LOGI(TAG, "%s", cgreg.c_str());
+    ESP_LOGI(TAG, "%s", response.c_str());
     ESP_LOGI(TAG, "*********************************************************");
 
-    writeCommand("AT+CIREG?");
-    std::string CIREG = readResponse(READ_RESPONSE_TIMEOUT);
+    write_command("AT+CIREG?");
+    response = read_response(READ_RESPONSE_TIMEOUT);
     ESP_LOGI(TAG, "*********************************************************");
     ESP_LOGI(TAG, "AT+CIREG?");
-    ESP_LOGI(TAG, "%s", CIREG.c_str());
+    ESP_LOGI(TAG, "%s", response.c_str());
     ESP_LOGI(TAG, "*********************************************************");
 
-    writeCommand("AT+CLIP=1");
-    std::string CLIP = readResponse(READ_RESPONSE_TIMEOUT);
+    write_command("AT+CLIP=1");
+    response = read_response(READ_RESPONSE_TIMEOUT);
     ESP_LOGI(TAG, "*********************************************************");
     ESP_LOGI(TAG, "AT+CLIP=1");
-    ESP_LOGI(TAG, "%s", CLIP.c_str());
+    ESP_LOGI(TAG, "%s", response.c_str());
     ESP_LOGI(TAG, "*********************************************************");
 
-    writeCommand("AT+CRC=1");
-    std::string ATCRC = readResponse(READ_RESPONSE_TIMEOUT);
+    write_command("AT+CRC=1");
+    response = read_response(READ_RESPONSE_TIMEOUT);
     ESP_LOGI(TAG, "*********************************************************");
     ESP_LOGI(TAG, "AT+CRC=1");
-    ESP_LOGI(TAG, "%s", ATCRC.c_str());
+    ESP_LOGI(TAG, "%s", response.c_str());
     ESP_LOGI(TAG, "*********************************************************");
 
 
 
-    writeCommand("AT+CMEE=2");
-    std::string r = readResponse(READ_RESPONSE_TIMEOUT);
+    // Enable verbose error reporting
+    write_command("AT+CMEE=2");
+    response = read_response(READ_RESPONSE_TIMEOUT);
     ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
     ESP_LOGI(TAG, "AT+CMEE=2");
-    ESP_LOGI(TAG, "%s", r.c_str());
+    ESP_LOGI(TAG, "%s", response.c_str());
     ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
 
-    writeCommand("AT+CIREG?");
-    r = readResponse(READ_RESPONSE_TIMEOUT);
+    write_command("AT+CIREG?");
+    response = read_response(READ_RESPONSE_TIMEOUT);
     ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
     ESP_LOGI(TAG, "AT+CIREG?");
-    ESP_LOGI(TAG, "%s", r.c_str());
+    ESP_LOGI(TAG, "%s", response.c_str());
     ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
 
-    writeCommand("AT+CPSI?");
-    r = readResponse(READ_RESPONSE_TIMEOUT);
+    write_command("AT+CPSI?");
+    response = read_response(READ_RESPONSE_TIMEOUT);
     ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
     ESP_LOGI(TAG, "AT+CPSI?");
-    ESP_LOGI(TAG, "%s", r.c_str());
+    ESP_LOGI(TAG, "%s", response.c_str());
     ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
 
     char atd_command[32];
     snprintf(atd_command, sizeof(atd_command), "ATD%s;", CONFIG_PHONE_NUMBER_FOR_RESPONSE);
-    writeCommand(atd_command);
-    r = readResponse(READ_RESPONSE_TIMEOUT);
+    write_command(atd_command);
+    response = read_response(READ_RESPONSE_TIMEOUT);
     ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-    ESP_LOGI(TAG, "ATD");
-    ESP_LOGI(TAG, "%s", r.c_str());
+    ESP_LOGI(TAG, "%s", atd_command);
+    ESP_LOGI(TAG, "%s", response.c_str());
     ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
 
     vTaskDelay(pdMS_TO_TICKS(3000));
 
-    writeCommand("AT+CEER");
-    r = readResponse(READ_RESPONSE_TIMEOUT);
+    write_command("AT+CEER");
+    response = read_response(READ_RESPONSE_TIMEOUT);
     ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
     ESP_LOGI(TAG, "AT+CEER");
-    ESP_LOGI(TAG, "%s", r.c_str());
+    ESP_LOGI(TAG, "%s", response.c_str());
     ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
 
-    writeCommand("AT+CLCC");
-    r = readResponse(READ_RESPONSE_TIMEOUT);
+    write_command("AT+CLCC");
+    response = read_response(READ_RESPONSE_TIMEOUT);
     ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
     ESP_LOGI(TAG, "AT+CLCC");
-    ESP_LOGI(TAG, "%s", r.c_str());
+    ESP_LOGI(TAG, "%s", response.c_str());
     ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
 
-    writeCommand("AT+CPSI?");
-    r = readResponse(READ_RESPONSE_TIMEOUT);
+    write_command("AT+CPSI?");
+    response = read_response(READ_RESPONSE_TIMEOUT);
     ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
     ESP_LOGI(TAG, "AT+CPSI?");
-    ESP_LOGI(TAG, "%s", r.c_str());
+    ESP_LOGI(TAG, "%s", response.c_str());
     ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
 
-
-    writeCommand("AT+CLCC");
-    r = readResponse(READ_RESPONSE_TIMEOUT);
+    write_command("AT+CLCC");
+    response = read_response(READ_RESPONSE_TIMEOUT);
     ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
     ESP_LOGI(TAG, "AT+CLCC");
-    ESP_LOGI(TAG, "%s", r.c_str());
+    ESP_LOGI(TAG, "%s", response.c_str());
     ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
 
-    writeCommand("AT+CPSI?");
-    r = readResponse(READ_RESPONSE_TIMEOUT);
+    write_command("AT+CPSI?");
+    response = read_response(READ_RESPONSE_TIMEOUT);
     ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
     ESP_LOGI(TAG, "AT+CPSI?");
-    ESP_LOGI(TAG, "%s", r.c_str());
+    ESP_LOGI(TAG, "%s", response.c_str());
     ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
 
     vTaskDelay(pdMS_TO_TICKS(3000));
 
-    writeCommand("AT+CLCC");
-    r = readResponse(READ_RESPONSE_TIMEOUT);
+    write_command("AT+CLCC");
+    response = read_response(READ_RESPONSE_TIMEOUT);
     ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
     ESP_LOGI(TAG, "AT+CLCC");
-    ESP_LOGI(TAG, "%s", r.c_str());
+    ESP_LOGI(TAG, "%s", response.c_str());
     ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
 
-    writeCommand("AT+CPSI?");
-    r = readResponse(READ_RESPONSE_TIMEOUT);
+    write_command("AT+CPSI?");
+    response = read_response(READ_RESPONSE_TIMEOUT);
     ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
     ESP_LOGI(TAG, "AT+CPSI?");
-    ESP_LOGI(TAG, "%s", r.c_str());
+    ESP_LOGI(TAG, "%s", response.c_str());
     ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-    writeCommand("ATH");
+    write_command("ATH");
 }
 
-bool A7670Modem::sendSMS(const std::string& number, const std::string& message) {
+bool A7670Modem::send_sms(const std::string& number, const std::string& message) {
     // SMS text mode
-    writeCommand("AT+CMGF=1"); readResponse(READ_RESPONSE_TIMEOUT);
+    write_command("AT+CMGF=1");
+    read_response(READ_RESPONSE_TIMEOUT);
+
     // Tell the modem which character encoding to use for text messages
     // "GSM" means the GSM 7-bit default alphabet
-    writeCommand("AT+CSCS=\"GSM\""); readResponse(READ_RESPONSE_TIMEOUT);
+    write_command("AT+CSCS=\"GSM\"");
+    read_response(READ_RESPONSE_TIMEOUT);
 
-    std::string cmd = "AT+CMGS=\"" + number + "\"";
-    writeCommand(cmd);
-    readResponse(READ_RESPONSE_TIMEOUT);
+    write_command("AT+CMGS=\"" + number + "\"");
+    read_response(READ_RESPONSE_TIMEOUT);
 
-    uart_write_bytes(uartNum, message.c_str(), message.length());
-    uint8_t ctrlZ = 26;
-    uart_write_bytes(uartNum, (char*)&ctrlZ, 1);
+    uart_write_bytes(uart_number, message.c_str(), message.length());
+    uint8_t ctrl_z = 26;
+    uart_write_bytes(uart_number, (char*)&ctrl_z, 1);
 
-    std::string resp = readResponse(5000);
-    bool ok = resp.find("OK") != std::string::npos;
+    std::string response = read_response(5000);
+    bool ok = response.find("OK") != std::string::npos;
     ESP_LOGI(TAG, "SMS send %s", ok ? "success" : "failed");
     return ok;
 }
 
-void A7670Modem::startSMSListener() {
-    if (!smsTaskHandle) {
-        xTaskCreate(smsTaskWrapper, "smsTask", 4096, this, 5, &smsTaskHandle);
+void A7670Modem::start_sms_listener() {
+    if (!sms_task_handle) {
+        xTaskCreate(sms_task_wrapper, "sms_task", 4096, this, 5, &sms_task_handle);
     }
 }
 
 // FreeRTOS tasks need static functions, so we wrap the member function
-void A7670Modem::smsTaskWrapper(void* param) {
+void A7670Modem::sms_task_wrapper(void* param) {
     A7670Modem* modem = static_cast<A7670Modem*>(param);
-    modem->smsTask();
+    modem->sms_task();
 }
 
-// void A7670Modem::smsTask() {
-//     char buf[512];
-//     std::string line;
-//     bool receivingMessage = false;
-//     std::string senderNumber;
-
-//     while (true) {
-//         int len = uart_read_bytes(uartNum, (uint8_t*)buf, sizeof(buf)-1, pdMS_TO_TICKS(500));
-//         if (len > 0) {
-//             buf[len] = 0;
-//             line += buf;
-
-//             size_t newlinePos;
-//             while ((newlinePos = line.find('\n')) != std::string::npos) {
-//                 std::string currentLine = trim(line.substr(0, newlinePos));
-//                 line.erase(0, newlinePos + 1);
-
-//                 if (currentLine.starts_with("+CMT: ")) {
-//                     // Extract sender
-//                     size_t firstQuote = currentLine.find("\"");
-//                     size_t secondQuote = currentLine.find("\"", firstQuote + 1);
-//                     senderNumber = currentLine.substr(firstQuote + 1, secondQuote - firstQuote - 1);
-//                     receivingMessage = true;
-//                 } else if (receivingMessage) {
-//                     std::string receivedMessage = trim(currentLine);
-//                     receivingMessage = false;
-//                     // Handle message
-//                     handleIncomingSMS(senderNumber, receivedMessage);
-//                 }
-//             }
-//         }
-//     }
-// }
-
-void A7670Modem::smsTask() {
-    char buf[512];
+void A7670Modem::sms_task() {
+    char buffer[512];
     std::string line;
 
-    bool receivingMessage = false;
-    std::string senderNumber;
+    bool receiving_message = false;
+    std::string sender_number;
 
     while (true) {
+        int length = uart_read_bytes(uart_number, reinterpret_cast<uint8_t*>(buffer), sizeof(buffer) - 1, pdMS_TO_TICKS(500));
 
-        int len = uart_read_bytes(
-            uartNum,
-            reinterpret_cast<uint8_t*>(buf),
-            sizeof(buf) - 1,
-            pdMS_TO_TICKS(500)
-        );
-
-        if (len <= 0) {
+        if (length <= 0) {
             continue;
         }
 
-        buf[len] = 0;
-        line += buf;
+        buffer[length] = 0;
+        line += buffer;
 
-        size_t newlinePos;
+        size_t newline_position;
 
-        while ((newlinePos = line.find('\n')) != std::string::npos) {
+        while ((newline_position = line.find('\n')) != std::string::npos) {
+            std::string current_line = trim(line.substr(0, newline_position));
 
-            std::string currentLine =
-                trim(line.substr(0, newlinePos));
+            line.erase(0, newline_position + 1);
 
-            line.erase(0, newlinePos + 1);
-
-            if (currentLine.empty()) {
+            if (current_line.empty()) {
                 continue;
             }
 
-            ESP_LOGI(TAG, "URC: %s", currentLine.c_str());
+            ESP_LOGI(TAG, "URC: %s", current_line.c_str());
 
             // -------------------------------------------------
             // Incoming SMS header
             // -------------------------------------------------
+            if (current_line.starts_with("+CMT: ")) {
+                size_t first_quote = current_line.find('"');
+                size_t second_quote = current_line.find('"', first_quote + 1);
 
-            if (currentLine.starts_with("+CMT: ")) {
-
-                size_t firstQuote =
-                    currentLine.find('"');
-
-                size_t secondQuote =
-                    currentLine.find('"', firstQuote + 1);
-
-                if (firstQuote != std::string::npos &&
-                    secondQuote != std::string::npos) {
-
-                    senderNumber =
-                        currentLine.substr(
-                            firstQuote + 1,
-                            secondQuote - firstQuote - 1
-                        );
-
-                    receivingMessage = true;
+                if (first_quote != std::string::npos && second_quote != std::string::npos) {
+                    sender_number = current_line.substr(first_quote + 1, second_quote - first_quote - 1);
+                    receiving_message = true;
                 }
             }
 
             // -------------------------------------------------
             // Incoming SMS body
             // -------------------------------------------------
-
-            else if (receivingMessage) {
-
-                std::string receivedMessage =
-                    trim(currentLine);
-
-                receivingMessage = false;
-
-                handleIncomingSMS(
-                    senderNumber,
-                    receivedMessage
-                );
+            else if (receiving_message) {
+                std::string receivedMessage = trim(current_line);
+                receiving_message = false;
+                handle_incoming_sms(sender_number, receivedMessage);
             }
 
             // -------------------------------------------------
             // Incoming call
             // -------------------------------------------------
-
-            else if (currentLine == "RING" ||
-                     currentLine.starts_with("+CRING:")) {
-
+            else if (current_line == "RING" || current_line.starts_with("+CRING:")) {
                 ESP_LOGI(TAG, "Incoming call");
 
-                writeCommand("AT+CLCC");
-                std::string r = readResponse(READ_RESPONSE_TIMEOUT);
+                write_command("AT+CLCC");
+                std::string response = read_response(READ_RESPONSE_TIMEOUT);
                 ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
                 ESP_LOGI(TAG, "Incoming AT+CLCC");
-                ESP_LOGI(TAG, "%s", r.c_str());
+                ESP_LOGI(TAG, "%s", response.c_str());
                 ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
 
-                handleIncomingCall();
+                handle_incoming_call();
             }
 
             // -------------------------------------------------
             // Caller ID
             // -------------------------------------------------
-
-            else if (currentLine.starts_with("+CLIP:")) {
-
-                ESP_LOGI(
-                    TAG,
-                    "Caller ID: %s",
-                    currentLine.c_str()
-                );
+            else if (current_line.starts_with("+CLIP:")) {
+                ESP_LOGI(TAG, "Caller ID: %s", current_line.c_str());
             }
 
             // -------------------------------------------------
             // Call started
             // -------------------------------------------------
-
-            else if (currentLine == "VOICE CALL: BEGIN") {
+            else if (current_line == "VOICE CALL: BEGIN") {
                 ESP_LOGI(TAG, "Voice call connected");
 
-                writeCommand("AT+CLCC");
-                std::string r = readResponse(READ_RESPONSE_TIMEOUT);
+                write_command("AT+CLCC");
+                std::string response = read_response(READ_RESPONSE_TIMEOUT);
                 ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
                 ESP_LOGI(TAG, "AT+CLCC");
-                ESP_LOGI(TAG, "%s", r.c_str());
+                ESP_LOGI(TAG, "%s", response.c_str());
                 ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
 
                 vTaskDelay(pdMS_TO_TICKS(100));
 
-                writeCommand("AT+CPSI?");
-                r = readResponse(READ_RESPONSE_TIMEOUT);
+                write_command("AT+CPSI?");
+                response = read_response(READ_RESPONSE_TIMEOUT);
                 ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
                 ESP_LOGI(TAG, "AT+CPSI?");
-                ESP_LOGI(TAG, "%s", r.c_str());
+                ESP_LOGI(TAG, "%s", response.c_str());
                 ESP_LOGI(TAG, "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
             }
 
             // -------------------------------------------------
             // Call ended
             // -------------------------------------------------
-
-            else if (currentLine == "VOICE CALL: END" ||
-                     currentLine == "NO CARRIER") {
-
+            else if (current_line == "VOICE CALL: END" || current_line == "NO CARRIER") {
                 ESP_LOGI(TAG, "Voice call ended");
             }
         }
     }
 }
 
-void A7670Modem::handleIncomingCall() {
-
+void A7670Modem::handle_incoming_call() {
     ESP_LOGI(TAG, "Answering incoming call");
-
-    writeCommand("ATA");
+    write_command("ATA");
 }
 
-// In A7670.cpp
-void A7670Modem::handleIncomingSMS(const std::string &from, const std::string &msg) {
-    ESP_LOGI(TAG, "SMS from %s: %s", from.c_str(), msg.c_str());
+void A7670Modem::handle_incoming_sms(const std::string &from_number, const std::string &message)
+{
+    ESP_LOGI(TAG, "SMS from number: %s message: %s", from_number.c_str(), message.c_str());
 
     // If message contains "status", reply
-    if (msg.find("status") != std::string::npos) {
+    if (message.find("status") != std::string::npos) {
         ESP_LOGI(TAG, "'status' command received, sending reply");
 
         std::string reply = "--- Device Status ---\n";
         reply += "Status: Online\n";
-        reply += "Operator: " + getOperator() + "\n";
-        reply += "Signal: " + std::to_string(getSignalQuality()) + "\n";
-        reply += "Time: " + getTime() + "\n";
+        reply += "Operator: " + get_operator() + "\n";
+        reply += "Signal: " + std::to_string(get_signal_quality()) + "\n";
+        reply += "Time: " + get_time() + "\n";
 
-        sendSMS(from, reply);
+        send_sms(from_number, reply);
     }
 }
 
-std::string A7670Modem::getModemName() {
-    writeCommand("ATI");
-    std::string resp = readResponse(READ_RESPONSE_TIMEOUT);
+std::string A7670Modem::get_modem_name() {
+    write_command("ATI");
+    std::string response = read_response(READ_RESPONSE_TIMEOUT);
 
-    size_t pos = resp.find("Model:");
-    if (pos != std::string::npos) {
-        size_t end = resp.find("\n", pos);
-        return trim(resp.substr(pos + 6, end - (pos + 6)));
+    size_t position_of_model = response.find("Model:");
+    if (position_of_model != std::string::npos) {
+        size_t end = response.find("\n", position_of_model);
+        return trim(response.substr(position_of_model + 6, end - (position_of_model + 6)));
     }
 
     return "Unknown";
 }
 
-std::string A7670Modem::getModemInfo() {
-    writeCommand("ATI");
-    std::string resp = readResponse(READ_RESPONSE_TIMEOUT);
+std::string A7670Modem::get_modem_info() {
+    write_command("ATI");
+    std::string response = read_response(READ_RESPONSE_TIMEOUT);
 
-    std::string info;
+    std::string modem_info;
 
-    size_t pos;
+    size_t position_of_symbol;
 
-    if ((pos = resp.find("Manufacturer:")) != std::string::npos) {
-        size_t end = resp.find("\n", pos);
-        info += trim(resp.substr(pos, end - pos)) + " ";
+    if ((position_of_symbol = response.find("Manufacturer:")) != std::string::npos) {
+        size_t end = response.find("\n", position_of_symbol);
+        modem_info += trim(response.substr(position_of_symbol, end - position_of_symbol)) + " ";
     }
 
-    if ((pos = resp.find("Model:")) != std::string::npos) {
-        size_t end = resp.find("\n", pos);
-        info += trim(resp.substr(pos, end - pos)) + " ";
+    if ((position_of_symbol = response.find("Model:")) != std::string::npos) {
+        size_t end = response.find("\n", position_of_symbol);
+        modem_info += trim(response.substr(position_of_symbol, end - position_of_symbol)) + " ";
     }
 
-    if ((pos = resp.find("Revision:")) != std::string::npos) {
-        size_t end = resp.find("\n", pos);
-        info += trim(resp.substr(pos, end - pos));
+    if ((position_of_symbol = response.find("Revision:")) != std::string::npos) {
+        size_t end = response.find("\n", position_of_symbol);
+        modem_info += trim(response.substr(position_of_symbol, end - position_of_symbol));
     }
 
-    return trim(info);
+    return trim(modem_info);
 }
 
-std::string A7670Modem::getSimCCID(int timeout_ms) {
+std::string A7670Modem::get_sim_ccid(int timeout_ms) {
+    std::string sim_ccid = "N/A"; // timed out waiting for SIM
+
     int elapsed = 0;
     const int interval = 500; // ms
 
     while (elapsed < timeout_ms) {
-        writeCommand("AT+CPIN?");
-        std::string cpinResp = readResponse(1000);
-        if (cpinResp.find("READY") != std::string::npos) {
+        write_command("AT+CPIN?");
+        std::string response = read_response(1000);
+
+        if (response.find("READY") != std::string::npos) {
             // SIM is ready, now get CCID
-            writeCommand("AT+CICCID");
-            std::string resp = readResponse(1000);
+            write_command("AT+CICCID");
+            response = read_response(1000);
 
             // Extract digits only
-            size_t start = resp.find_first_of("0123456789");
+            size_t start = response.find_first_of("0123456789");
             if (start != std::string::npos) {
-                size_t end = resp.find_first_not_of("0123456789", start);
-                return resp.substr(start, end - start);
+                size_t end = response.find_first_not_of("0123456789", start);
+                sim_ccid = response.substr(start, end - start);
             }
-            return "N/A"; // unexpected format
         }
 
         vTaskDelay(pdMS_TO_TICKS(interval));
         elapsed += interval;
     }
 
-    return "N/A"; // timed out waiting for SIM
+    return sim_ccid;
 }
 
-std::string A7670Modem::getIMEI() {
-    writeCommand("AT+GSN");
-    std::string resp = readResponse(READ_RESPONSE_TIMEOUT);
+std::string A7670Modem::get_imei() {
+    std::string imei = "N/A";
+
+    write_command("AT+GSN");
+    std::string response = read_response(READ_RESPONSE_TIMEOUT);
 
     // IMEI is usually just a number line before OK
-    size_t start = resp.find_first_of("0123456789");
+    size_t start = response.find_first_of("0123456789");
     if (start != std::string::npos) {
-        size_t end = resp.find("\n", start);
-        return trim(resp.substr(start, end - start));
+        size_t end = response.find("\n", start);
+        imei = trim(response.substr(start, end - start));
     }
 
-    return "N/A";
+    return imei;
 }
 
-int A7670Modem::getSignalQuality() {
-    writeCommand("AT+CSQ");
-    std::string resp = readResponse(READ_RESPONSE_TIMEOUT);
+int A7670Modem::get_signal_quality() {
+    int signal_quality = -1; // invalid
+
+    write_command("AT+CSQ");
+    std::string response = read_response(READ_RESPONSE_TIMEOUT);
 
     // Example: +CSQ: 12,99
-    size_t pos = resp.find("+CSQ:");
-    if (pos != std::string::npos) {
+    size_t position_of_csq = response.find("+CSQ:");
+    if (position_of_csq != std::string::npos) {
         int rssi = -1;
-        sscanf(resp.c_str() + pos, "+CSQ: %d", &rssi);
-        return rssi;
+        sscanf(response.c_str() + position_of_csq, "+CSQ: %d", &rssi);
+        signal_quality = rssi;
     }
 
-    return -1; // invalid
+    return signal_quality;
 }
 
-std::string A7670Modem::getOperator() {
-    writeCommand("AT+COPS?");
-    std::string resp = readResponse(READ_RESPONSE_TIMEOUT);
+std::string A7670Modem::get_operator() {
+    std::string operator_name = "N/A";
+
+    write_command("AT+COPS?");
+    std::string response = read_response(READ_RESPONSE_TIMEOUT);
 
     // Example: +COPS: 0,2,"23410",7
-    size_t pos = resp.find("+COPS:");
-    if (pos != std::string::npos) {
-        size_t firstQuote = resp.find('"', pos);
-        size_t secondQuote = resp.find('"', firstQuote + 1);
+    size_t position_of_cops = response.find("+COPS:");
+    if (position_of_cops != std::string::npos) {
+        size_t first_quote = response.find('"', position_of_cops);
+        size_t second_quote = response.find('"', first_quote + 1);
 
-        if (firstQuote != std::string::npos && secondQuote != std::string::npos) {
-            return resp.substr(firstQuote + 1, secondQuote - firstQuote - 1);
+        if (first_quote != std::string::npos && second_quote != std::string::npos) {
+            operator_name = response.substr(first_quote + 1, second_quote - first_quote - 1);
         }
     }
 
-    return "N/A";
+    return operator_name;
 }
 
-std::string A7670Modem::getTime() {
+std::string A7670Modem::get_time() {
     // Placeholder for actual time; can be expanded with AT+CCLK or NITZ parsing
     return "Not available";
 }
 
-std::string A7670Modem::trim(const std::string& s) {
-    size_t start = s.find_first_not_of("\r\n ");
-    size_t end = s.find_last_not_of("\r\n ");
-    return (start == std::string::npos) ? "" : s.substr(start, end - start + 1);
+std::string A7670Modem::trim(const std::string& string_to_be_trimmed) {
+    size_t start = string_to_be_trimmed.find_first_not_of("\r\n ");
+    size_t end = string_to_be_trimmed.find_last_not_of("\r\n ");
+    return (start == std::string::npos) ? "" : string_to_be_trimmed.substr(start, end - start + 1);
 }
 
-bool A7670Modem::httpsPOST(const std::string &url, const std::string &json_data, const std::string &apiKey)
+bool A7670Modem::https_post(const std::string &url, const std::string &json_data, const std::string &api_key)
 {
     ESP_LOGI(TAG, "Starting HTTPS POST...");
 
-    writeCommand("AT+QNWINFO");
-    std::string raw1 = readResponse(2000);
+    write_command("AT+QNWINFO");
+    std::string raw_response = read_response(2000);
+
     ESP_LOGI(TAG, "=======================================");
     ESP_LOGI(TAG, "QNWINFO:");
-    ESP_LOGI(TAG, "%s", raw1.c_str());
+    ESP_LOGI(TAG, "%s", raw_response.c_str());
     ESP_LOGI(TAG, "=======================================");
-    std::string qnwinfo = extractSingleAtLine(raw1, "+QNWINFO:");
+
+    std::string qnwinfo = extract_single_at_line(raw_response, "+QNWINFO:");
     ESP_LOGI(TAG, "=======================================");
     ESP_LOGI(TAG, "QNWINFO:");
     ESP_LOGI(TAG, "%s", qnwinfo.c_str());
     ESP_LOGI(TAG, "=======================================");
 
     // Ensure PDP context is active
-    writeCommand("AT+CGACT=1,1");
-    if (readResponse(2000).find("OK") == std::string::npos) {
+    write_command("AT+CGACT=1,1");
+    if (read_response(2000).find("OK") == std::string::npos) {
         ESP_LOGE(TAG, "Failed to activate PDP context");
         return false;
     }
 
     // Close any previous HTTP session
-    writeCommand("AT+HTTPTERM");
-    readResponse(2000); // ignore ERROR if no previous session
+    write_command("AT+HTTPTERM");
+    read_response(2000); // ignore ERROR if no previous session
 
     // Init HTTP service
-    writeCommand("AT+HTTPINIT");
-    if (readResponse(2000).find("OK") == std::string::npos) {
+    write_command("AT+HTTPINIT");
+    if (read_response(2000).find("OK") == std::string::npos) {
         ESP_LOGE(TAG, "HTTPINIT failed");
         return false;
     }
 
     // Set SSL/TLS version (TLS 1.2)
-    writeCommand("AT+CSSLCFG=\"sslversion\",0,4");
-    readResponse(2000);
+    write_command("AT+CSSLCFG=\"sslversion\",0,4");
+    read_response(2000);
 
     // Enable SNI
-    writeCommand("AT+CSSLCFG=\"enableSNI\",0,1");
-    readResponse(2000);
+    write_command("AT+CSSLCFG=\"enableSNI\",0,1");
+    read_response(2000);
 
     // Set URL
-    writeCommand(("AT+HTTPPARA=\"URL\",\"" + url + "\"").c_str());
-    if (readResponse(2000).find("OK") == std::string::npos) {
+    write_command(("AT+HTTPPARA=\"URL\",\"" + url + "\"").c_str());
+    if (read_response(2000).find("OK") == std::string::npos) {
         ESP_LOGE(TAG, "Failed to set URL");
         return false;
     }
 
     // Set user-agent
-    writeCommand("AT+HTTPPARA=\"USERDATA\",\"User-Agent: TinyGSM/ESP-IDF\"");
-    readResponse(2000);
+    write_command("AT+HTTPPARA=\"USERDATA\",\"User-Agent: TinyGSM/ESP-IDF\"");
+    read_response(2000);
 
     // Set custom API key header
-    writeCommand(("AT+HTTPPARA=\"USERDATA\",\"X-API-KEY: " + apiKey + "\"").c_str());
-    readResponse(2000);
+    write_command(("AT+HTTPPARA=\"USERDATA\",\"X-API-KEY: " + api_key + "\"").c_str());
+    read_response(2000);
 
     // Set data to send
-    char cmd[64];
-    snprintf(cmd, sizeof(cmd), "AT+HTTPDATA=%d,10000", (int)json_data.length());
-    writeCommand(cmd);
+    char command[64];
+    snprintf(command, sizeof(command), "AT+HTTPDATA=%d,10000", (int)json_data.length());
+    write_command(command);
 
-    if (readResponse(2000).find("DOWNLOAD") == std::string::npos) {
+    if (read_response(2000).find("DOWNLOAD") == std::string::npos) {
         ESP_LOGE(TAG, "Failed to enter HTTPDATA mode");
         return false;
     }
 
     // Send JSON payload
-    writeCommand(json_data.c_str());
-    if (readResponse(5000).find("OK") == std::string::npos) {
+    write_command(json_data.c_str());
+    if (read_response(5000).find("OK") == std::string::npos) {
         ESP_LOGE(TAG, "Failed to send HTTP data");
         return false;
     }
 
-    // 1. Send POST
-    writeCommand("AT+HTTPACTION=1");
+    // Send POST
+    write_command("AT+HTTPACTION=1");
 
-    // 2. Wait for +HTTPACTION
-    std::string resp;
+    // Wait for +HTTPACTION
+    std::string response;
     int64_t start = esp_timer_get_time();
     while ((esp_timer_get_time() - start) < 15000000) {
-        std::string line = readLine(500);
+        std::string line = read_line(500);
         if (!line.empty()) {
-            resp += line + "\n";
+            response += line + "\n";
             if (line.find("+HTTPACTION: 1,") != std::string::npos) break;
         }
     }
-    if (resp.find("+HTTPACTION: 1,200") == std::string::npos) {
-        ESP_LOGE(TAG, "HTTPACTION failed: %s", resp.c_str());
+    if (response.find("+HTTPACTION: 1,200") == std::string::npos) {
+        ESP_LOGE(TAG, "HTTPACTION failed: %s", response.c_str());
         return false;
     }
 
-    writeCommand("AT+HTTPHEAD");
-    std::string raw = readResponse(2000);
+    // HTTP HEAD
+    write_command("AT+HTTPHEAD");
+    raw_response = read_response(2000);
     ESP_LOGI(TAG, "HEADERS START:");
-    ESP_LOGI(TAG, "%s", raw.c_str());
+    ESP_LOGI(TAG, "%s", raw_response.c_str());
     ESP_LOGI(TAG, "HEADERS STOP");
 
-    std::string headers = extractHttpSection(raw, "+HTTPHEAD:");
-
+    // HTTP Headers
+    std::string http_headers = extract_http_section(raw_response, "+HTTPHEAD:");
     ESP_LOGI(TAG, "=======================================");
     ESP_LOGI(TAG, "HTTPS HEADERS:");
-    ESP_LOGI(TAG, "%s", headers.c_str());
+    ESP_LOGI(TAG, "%s", http_headers.c_str());
     ESP_LOGI(TAG, "=======================================");
 
-    // 3. Query length
-    writeCommand("AT+HTTPREAD?");
-    std::string header = readResponse(2000); // +HTTPREAD: <len>
-    int len = parseLen(header); // extract the available length
+    // Query length
+    write_command("AT+HTTPREAD?");
+    std::string header = read_response(2000); // +HTTPREAD: <len>
+    int length = parse_length(header); // extract the available length
 
     // 1. Send HTTPREAD
-    snprintf(cmd, sizeof(cmd), "AT+HTTPREAD=0,%d", len);
-    writeCommand(cmd);
+    snprintf(command, sizeof(command), "AT+HTTPREAD=0,%d", length);
+    write_command(command);
 
-    raw = readResponse(2000);
+    raw_response = read_response(2000);
 
     ESP_LOGI(TAG, "HTTPREAD RESPONSE START:");
-    ESP_LOGI(TAG, "%s", raw.c_str());
+    ESP_LOGI(TAG, "%s", raw_response.c_str());
     ESP_LOGI(TAG, "HTTPREAD RESPONSE STOP");
 
-    std::string body = extractHttpSection(raw, "+HTTPREAD:");
+    std::string response_body = extract_http_section(raw_response, "+HTTPREAD:");
 
     ESP_LOGI(TAG, "=======================================");
     ESP_LOGI(TAG, "HTTPS RESPONSE:");
-    ESP_LOGI(TAG, "%s", body.c_str());
+    ESP_LOGI(TAG, "%s", response_body.c_str());
     ESP_LOGI(TAG, "=======================================");
 
-    writeCommand("AT+HTTPTERM"); readResponse(2000);
+    write_command("AT+HTTPTERM"); read_response(2000);
 
     return true;
 }
 
-bool A7670Modem::httpsGET(const std::string &url) {
+bool A7670Modem::https_get(const std::string &url) {
     // Ensure PDP context is active
-    writeCommand("AT+CGACT=1,1");
-    if (readResponse(2000).find("OK") == std::string::npos) {
+    write_command("AT+CGACT=1,1");
+    if (read_response(2000).find("OK") == std::string::npos) {
         ESP_LOGE(TAG, "Failed to activate PDP context");
         return false;
     }
 
     // Close any previous HTTP session
-    writeCommand("AT+HTTPTERM");
-    readResponse(2000); // ignore ERROR if no previous session
+    write_command("AT+HTTPTERM");
+    read_response(2000); // ignore ERROR if no previous session
 
     // Init HTTP service
-    writeCommand("AT+HTTPINIT");
-    if (readResponse(2000).find("OK") == std::string::npos) {
+    write_command("AT+HTTPINIT");
+    if (read_response(2000).find("OK") == std::string::npos) {
         ESP_LOGE(TAG, "HTTPINIT failed");
         return false;
     }
 
     // Set SSL/TLS version (TLS 1.2)
-    writeCommand("AT+CSSLCFG=\"sslversion\",0,4");
-    readResponse(2000);
+    write_command("AT+CSSLCFG=\"sslversion\",0,4");
+    read_response(2000);
 
     // Enable SNI
-    writeCommand("AT+CSSLCFG=\"enableSNI\",0,1");
-    readResponse(2000);
+    write_command("AT+CSSLCFG=\"enableSNI\",0,1");
+    read_response(2000);
 
     // Set the URL
-    std::string setUrlCommand = "AT+HTTPPARA=\"URL\",\"" + url + "\"";
-    writeCommand(setUrlCommand);
-    if (readResponse(2000).find("OK") == std::string::npos) {
+    std::string set_url_command = "AT+HTTPPARA=\"URL\",\"" + url + "\"";
+    write_command(set_url_command);
+    if (read_response(2000).find("OK") == std::string::npos) {
         ESP_LOGE(TAG, "Failed to set GET URL");
         return false;
     }
 
     // Set user-agent
-    writeCommand("AT+HTTPPARA=\"USERDATA\",\"User-Agent: TinyGSM/ESP-IDF\"");
-    readResponse(2000);
-    writeCommand("AT+HTTPACTION=0");
+    write_command("AT+HTTPPARA=\"USERDATA\",\"User-Agent: TinyGSM/ESP-IDF\"");
+    read_response(2000);
+    write_command("AT+HTTPACTION=0");
 
-    // 2. Wait for +HTTPACTION
-    std::string resp;
+    // Wait for +HTTPACTION
+    std::string response;
     size_t start = esp_timer_get_time();
     while ((esp_timer_get_time() - start) < 15000000) {
-        std::string line = readLine(500);
+        std::string line = read_line(500);
         if (!line.empty()) {
-            resp += line + "\n";
+            response += line + "\n";
             if (line.find("+HTTPACTION: 0,") != std::string::npos) break;
         }
     }
-    if (resp.find("+HTTPACTION: 0,200") == std::string::npos) {
-        ESP_LOGE(TAG, "HTTPACTION GET failed: %s", resp.c_str());
+    if (response.find("+HTTPACTION: 0,200") == std::string::npos) {
+        ESP_LOGE(TAG, "HTTPACTION GET failed: %s", response.c_str());
         return false;
     }
 
-    // 3. Query length
-    writeCommand("AT+HTTPREAD?");
-    std::string header = readResponse(2000); // +HTTPREAD: <len>
-    int len = parseLen(header); // extract the available length
+    // Query length
+    write_command("AT+HTTPREAD?");
+    std::string header = read_response(2000); // +HTTPREAD: <len>
+    int length = parse_length(header); // extract the available length
 
     // 1. Send HTTPREAD
-    char cmd[64];
-    snprintf(cmd, sizeof(cmd), "AT+HTTPREAD=0,%d", len);
-    writeCommand(cmd);
+    char command[64];
+    snprintf(command, sizeof(command), "AT+HTTPREAD=0,%d", length);
+    write_command(command);
     
-    std::string raw = readResponse(2000);
+    response = read_response(2000);
 
     ESP_LOGI(TAG, "GET RESPONSE START");
-    ESP_LOGI(TAG, "%s", raw.c_str());
+    ESP_LOGI(TAG, "%s", response.c_str());
     ESP_LOGI(TAG, "GET RESPONE STOP");
-    std::string body = extractHttpSection(raw, "+HTTPREAD:");
+    std::string response_body = extract_http_section(response, "+HTTPREAD:");
     ESP_LOGI(TAG, "=======================================");
     ESP_LOGI(TAG, "HTTPS RESPONSE:");
-    ESP_LOGI(TAG, "%s", body.c_str());
+    ESP_LOGI(TAG, "%s", response_body.c_str());
     ESP_LOGI(TAG, "=======================================");
 
-    writeCommand("AT+HTTPTERM"); readResponse(2000);
+    write_command("AT+HTTPTERM"); read_response(2000);
 
     return true;
 }

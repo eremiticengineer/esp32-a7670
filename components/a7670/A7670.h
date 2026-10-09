@@ -11,37 +11,35 @@ public:
     void begin(const std::string& startupNumber, const std::string& startupMessage);
 
     // Start background task to monitor incoming SMS
-    void startSMSListener();
-    static void smsTaskWrapper(void* param);
-    void smsTask();
+    void start_sms_listener();
+    static void sms_task_wrapper(void* param);
+    void sms_task();
 
     // Send SMS to a number
-    bool sendSMS(const std::string& number, const std::string& message);
+    bool send_sms(const std::string& number, const std::string& message);
 
-    bool httpsPOST(const std::string &url, const std::string &json_data, const std::string &apiKey);
-    bool httpsGET(const std::string &url);
+    bool https_post(const std::string &url, const std::string &json_data, const std::string &apiKey);
+    bool https_get(const std::string &url);
 
 private:
-    int txPin, rxPin;
-    int dtrPin, powerPin, ledPin;
+    int tx_pin, rx_pin, dtr_pin, power_pin, led_pin;
 
-    std::string pendingStartupNumber;
-    std::string pendingStartupMessage;
+    std::string pending_startup_number;
+    std::string pending_startup_message;
 
-    void powerOnModem();
+    void power_on_modem();
 
-    static void smsTask(void* param);
-    void handleIncomingSMS(const std::string &from, const std::string &msg);
-    void handleIncomingCall();
+    void handle_incoming_sms(const std::string &from, const std::string &msg);
+    void handle_incoming_call();
 
     // Helpers to build the status message
-    std::string getTime();
-    std::string getModemName();
-    std::string getModemInfo();
-    std::string getSimCCID(int timeout_ms);
-    std::string getIMEI();
-    int getSignalQuality();
-    std::string getOperator();
+    std::string get_time();
+    std::string get_modem_name();
+    std::string get_modem_info();
+    std::string get_sim_ccid(int timeout_ms);
+    std::string get_imei();
+    int get_signal_quality();
+    std::string get_operator();
 
     // Helper: trim CR/LF
     static std::string trim(const std::string& s);
