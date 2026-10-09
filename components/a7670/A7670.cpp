@@ -463,11 +463,6 @@ void A7670Modem::power_on_gps() {
     gpio_set_direction(MODEM_DTR_PIN, GPIO_MODE_OUTPUT);
     gpio_set_direction(BOARD_PWRKEY_PIN, GPIO_MODE_OUTPUT);
     gpio_set_direction(BOARD_LED_PIN, GPIO_MODE_OUTPUT);
-
-
-
-
-
     // Set LED pin off
     gpio_set_level(BOARD_LED_PIN, 0);
 
@@ -511,10 +506,6 @@ void A7670Modem::power_on_gps() {
 
     std::string modem_info = get_modem_info();
     ESP_LOGI(TAG, "Modem info: %s", modem_info.c_str());
-
-
-
-
 
     // Power on...
     write_command("AT+CGNSSPWR=1");
