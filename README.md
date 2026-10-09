@@ -8,6 +8,7 @@ esp-idf v6
 ```
 idf.py menuconfig
 A7670 Configuration
+Serial flasher config -> Flash size -> 4 MB
 ```
 
 ## Supported modules
