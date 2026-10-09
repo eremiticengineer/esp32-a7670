@@ -431,12 +431,94 @@ std::string get_Local_ip() {
     return ip;
 }
 
-void power_on_gps() {
+} // namespace
+
+A7670Modem::A7670Modem() {
+  uart_number = static_cast<uart_port_t>(1);
+  sms_task_handle = nullptr;
+}
+
+A7670Modem::~A7670Modem() {
+  if (sms_task_handle) vTaskDelete(sms_task_handle);
+}
+
+void A7670Modem::begin_gps() {
+    power_on_gps();
+}
+
+void A7670Modem::power_on_gps() {
+    uart_config_t uart_config = {};
+    uart_config.baud_rate = 115200;
+    uart_config.data_bits = UART_DATA_8_BITS;
+    uart_config.parity    = UART_PARITY_DISABLE;
+    uart_config.stop_bits = UART_STOP_BITS_1;
+    uart_config.flow_ctrl = UART_HW_FLOWCTRL_DISABLE;
+    uart_config.rx_flow_ctrl_thresh = 0;
+    uart_config.rx_glitch_filt_thresh = 0;
+
+    uart_param_config(uart_number, &uart_config);
+    uart_set_pin(uart_number, MODEM_TX_PIN, MODEM_RX_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+    uart_driver_install(uart_number, 2048, 0, 0, nullptr, 0);
+
+    gpio_set_direction(MODEM_DTR_PIN, GPIO_MODE_OUTPUT);
+    gpio_set_direction(BOARD_PWRKEY_PIN, GPIO_MODE_OUTPUT);
+    gpio_set_direction(BOARD_LED_PIN, GPIO_MODE_OUTPUT);
+
+
+
+
+
+    // Set LED pin off
+    gpio_set_level(BOARD_LED_PIN, 0);
+
+    // Reset modem
+    gpio_set_level(MODEM_DTR_PIN, !MODEM_RESET_LEVEL);
+    vTaskDelay(pdMS_TO_TICKS(100));
+    gpio_set_level(MODEM_DTR_PIN, MODEM_RESET_LEVEL);
+    vTaskDelay(pdMS_TO_TICKS(2600));
+    gpio_set_level(MODEM_DTR_PIN, !MODEM_RESET_LEVEL);
+
+    // Pull down DTR to ensure the modem is not in sleep state
+    gpio_set_level(MODEM_DTR_PIN, 0);
+
+    // Turn on the modem
+    gpio_set_level(BOARD_PWRKEY_PIN, 0);
+    vTaskDelay(pdMS_TO_TICKS(100));
+    gpio_set_level(BOARD_PWRKEY_PIN, 1);
+    vTaskDelay(pdMS_TO_TICKS(MODEM_POWERON_PULSE_WIDTH_MS));
+    gpio_set_level(BOARD_PWRKEY_PIN, 0);
+
+    ESP_LOGI(TAG, "%s", PRODUCT_MODEL_NAME);
+
+    // Give modem ~3s to boot
+    vTaskDelay(pdMS_TO_TICKS(3000));
+
+    // Check whether it has been started
+    bool started = check_respond();
+    if (!started) {
+      ESP_LOGI(TAG, "modem failed to start");
+      return;
+    }
+    else {
+      ESP_LOGI(TAG, "modem started");
+    }
+
+    // Set LED pin on
+    gpio_set_level(BOARD_LED_PIN, 1);
+
+    std::string modem_name = get_modem_name();
+    ESP_LOGI(TAG, "Modem name: %s", modem_name.c_str());
+
+    std::string modem_info = get_modem_info();
+    ESP_LOGI(TAG, "Modem info: %s", modem_info.c_str());
+
+
+
+
+
     // Power on...
     write_command("AT+CGNSSPWR=1");
-
     std::string response = read_response(2000);
-
     log_response("AT+CGNSSPWR=1", response);
 
     AtResponse at_response = parse_at_response(response, "+CGNSSPWR");
@@ -455,6 +537,18 @@ void power_on_gps() {
     ESP_LOGI(TAG, "text = %s", at_response.text.c_str());
     ESP_LOGI(TAG, "status = %s", at_response.status.c_str());
 
+    // Enable NMEA forwarding
+    write_command("AT+CGNSSTST=1");
+    log_response("AT+CGNSSTST=1", read_response(2000));
+    write_command("AT+CGNSSPORTSWITCH=?");
+    log_response("Supported ports", read_response(2000));
+    write_command("AT+CGNSSPORTSWITCH?");
+    log_response("Current ports", read_response(2000));
+    write_command("AT+CGNSSPORTSWITCH=0,1");
+    log_response("Set NMEA UART", read_response(2000));
+    write_command("AT+CGNSSTST=1");
+    log_response("Enable NMEA", read_response(2000));
+    
     // ...request location...
     while (1) {
         // +CGNSSINFO: ,,,,,,,,
@@ -476,6 +570,40 @@ void power_on_gps() {
         // [HDOP],
         // [VDOP],
         // [NoSV]
+
+        ESP_LOGI(TAG, "-----------------------------------------------------");
+        // +CGNSSPWR: 1,0,1 = GNSS receiver enabled
+        // write_command("AT+CGNSSPWR?");
+        // log_response("AT+CGNSSPWR?", read_response(2000));
+
+        // write_command("AT+CGNSSTST?");
+        // log_response("AT+CGNSSTST?", read_response(2000));
+
+        // +CVAUXS: 1 = Auxiliary voltage output enabled
+        // write_command("AT+CVAUXS?");
+        // log_response("AT+CVAUXS?", read_response(2000));
+
+        // +CVAUXV: 3000 = Auxiliary voltage configured to 3000 mV (3.0 V)
+        // write_command("AT+CVAUXV?");
+        // log_response("AT+CVAUXV?", read_response(2000));
+        ESP_LOGI(TAG, "-----------------------------------------------------");
+
+        // Log satellite info
+        // $GPGSV,1,1,01,20,,,28,0*6C
+        // 01 — one GPS satellite visible
+        // 20 — satellite PRN 20
+        // 28 — signal strength of 28 dB-Hz
+        response = read_response(2000);
+        if (!response.empty()) {
+            std::istringstream stream(response);
+            std::string line;
+            while (std::getline(stream, line)) {
+                if (line.starts_with("$GPGSV")) {
+                    ESP_LOGI(TAG, "NMEA: %s", line.c_str());
+                }
+            }
+        }
+
         write_command("AT+CGNSSINFO");
         response = read_response(2000);
         //log_response("AT+CGNSSINFO", response);
@@ -492,18 +620,7 @@ void power_on_gps() {
     log_response("AT+CGNSSPWR=1", response);
 }
 
-} // namespace
-
-A7670Modem::A7670Modem() {
-  uart_number = static_cast<uart_port_t>(1);
-  sms_task_handle = nullptr;
-}
-
-A7670Modem::~A7670Modem() {
-  if (sms_task_handle) vTaskDelete(sms_task_handle);
-}
-
-void A7670Modem::begin(const std::string& startup_number, const std::string& startup_message) {
+void A7670Modem::begin_modem(const std::string& startup_number, const std::string& startup_message) {
     pending_startup_number = startup_number;
     pending_startup_message = startup_message;
 
@@ -525,8 +642,6 @@ void A7670Modem::begin(const std::string& startup_number, const std::string& sta
     gpio_set_direction(BOARD_LED_PIN, GPIO_MODE_OUTPUT);
 
     power_on_modem();
-
-    //power_on_gps();
 
     // Send startup SMS
     send_sms(pending_startup_number, pending_startup_message);

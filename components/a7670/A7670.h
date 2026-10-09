@@ -8,7 +8,10 @@ public:
     ~A7670Modem();
 
     // Initialize modem, power on, and send startup SMS
-    void begin(const std::string& startupNumber, const std::string& startupMessage);
+    void begin_modem(const std::string& startupNumber, const std::string& startupMessage);
+
+    // Initialise the GPD
+    void begin_gps();
 
     // Start background task to monitor incoming SMS
     void start_sms_listener();
@@ -28,6 +31,7 @@ private:
     std::string pending_startup_message;
 
     void power_on_modem();
+    void power_on_gps();
 
     void handle_incoming_sms(const std::string &from, const std::string &msg);
     void handle_incoming_call();

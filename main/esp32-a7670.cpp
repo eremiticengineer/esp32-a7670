@@ -16,25 +16,27 @@ extern "C" void app_main(void)
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
 
-    modem.begin(CONFIG_PHONE_NUMBER_FOR_RESPONSE, "LilyGo A7670 Device Started from esp-idf v6");
+    modem.begin_gps();
 
-    if (modem.https_post(CONFIG_SENSOR_SEND_WEB_SERVER_HTTPS_IMAGE_UPLOAD_URL,
-        "{\"esp32-a7670\":1}",
-        CONFIG_SENSOR_SEND_WEB_SERVER_HTTPS_IMAGE_UPLOAD_API_KEY)) {
-        ESP_LOGI("MAIN", "POST succeeded");
-    }
-    else {
-        ESP_LOGE("MAIN", "POST failed");
-    }
+    // modem.begin_modem(CONFIG_PHONE_NUMBER_FOR_RESPONSE, "LilyGo A7670 Device Started from esp-idf v6");
 
-    if (modem.https_get(CONFIG_SENSOR_SEND_OTA_URL)) {
-        ESP_LOGI("MAIN", "GET succeeded");
-    }
-    else {
-        ESP_LOGE("MAIN", "GET failed");
-    }
+    // if (modem.https_post(CONFIG_SENSOR_SEND_WEB_SERVER_HTTPS_IMAGE_UPLOAD_URL,
+    //     "{\"esp32-a7670\":1}",
+    //     CONFIG_SENSOR_SEND_WEB_SERVER_HTTPS_IMAGE_UPLOAD_API_KEY)) {
+    //     ESP_LOGI("MAIN", "POST succeeded");
+    // }
+    // else {
+    //     ESP_LOGE("MAIN", "POST failed");
+    // }
 
-    modem.start_sms_listener();
+    // if (modem.https_get(CONFIG_SENSOR_SEND_OTA_URL)) {
+    //     ESP_LOGI("MAIN", "GET succeeded");
+    // }
+    // else {
+    //     ESP_LOGE("MAIN", "GET failed");
+    // }
+
+    // modem.start_sms_listener();
     
     while(true) {
       vTaskDelay(pdMS_TO_TICKS(1000));
